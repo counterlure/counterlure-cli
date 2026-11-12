@@ -1,0 +1,16 @@
+name: test
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { persist-credentials: false }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: npm ci
+      - run: npm test
+      - name: Server key is pinned
+        run: node -e "import('./lib/server-key.js').then(k => { if (!/^[0-9a-f]{40}$/.test(k.SERVER_FINGERPRINT)) { console.log('::warning::no server key pinned yet'); } })"
