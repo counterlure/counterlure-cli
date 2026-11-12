@@ -5,12 +5,15 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      # Actions are pinned to full commit hashes, not tags, because a tag can be moved after the fact.
+      # Dependabot keeps these up to date.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with: { persist-credentials: false }
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with: { node-version: 22 }
-      - run: npm ci
+      - run: npm ci --ignore-scripts
       - run: npm test
       - name: Server key is pinned
         run: node -e "import('./lib/server-key.js').then(k => { if (!/^[0-9a-f]{40}$/.test(k.SERVER_FINGERPRINT)) { console.log('::warning::no server key pinned yet'); } })"

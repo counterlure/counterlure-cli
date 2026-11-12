@@ -9,3 +9,10 @@ session.json
 *.jpeg
 *.png
 *.webp
+
+# keys and credentials
+*.pem
+*.key
+*.asc
+*.p12
+*.pfx

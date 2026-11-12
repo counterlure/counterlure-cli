@@ -26,7 +26,7 @@ The server stores **nothing** about a check: not the fingerprint, not the result
 Needs Node.js 22 or newer.
 
 ```bash
-git clone https://github.com/counterlure/counterlure-cli.git
+git clone --branch v0.1.0 --depth 1 https://github.com/counterlure/counterlure-cli.git
 cd counterlure-cli
 npm ci
 npm link        # makes the `counterlure` command available
