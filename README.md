@@ -2,10 +2,14 @@
 
 Command-line access to [Counterlure](https://www.counterlure.com), a register of honeypot and social-engineering approaches against people in tech.
 
-Counterlure looks for one face turning up under different names. Reports come in from people who were approached. When enough independent sources report the same face, an analyst reviews the case, and corroborated cases can end in a published burn notice. This tool gives you two things from a terminal:
+Counterlure looks for one face turning up under different names. Reports come in from people who were approached. When enough independent sources report the same face, an analyst reviews the case, and corroborated cases can end in a published burn notice. From a terminal you can:
 
-* **Screen** a photo against corroborated cases and burn notices without the photo leaving your machine. This needs a member account.
+* **Open an account** with a username and an authenticator app, and pay for it in crypto. No email, phone number or name, ever.
+* **Screen** a photo against corroborated cases and burn notices without the photo leaving your machine. This needs an account.
 * **File** a report on a face. This needs no account at all.
+* **Write to the Counterlure team** and read their replies.
+
+By default all of it runs over Tor to Counterlure's onion service, so your network address never reaches us.
 
 ```
 $ counterlure check profile.jpg
@@ -28,21 +32,43 @@ Face detection (YuNet) and face templating (SFace) run locally on open models fr
 | `check` | one 128-number SFace template per face | the photo, file names, EXIF | nothing about the query; a per-member daily counter |
 | `report` | a crop of the chosen face, the name given, context, optional handle | the rest of the photo, other faces in frame, EXIF/GPS, device data | the crop and template (encrypted at rest), name and handle (sealed), a hash of the receipt |
 | `withdraw` | the receipt | anything else | nothing: the crop and template are destroyed |
+| `signup` | the username you pick, authenticator codes, the transaction ID of your payment | email, phone, name, card details | the username, the authenticator secret and the payment record (encrypted) |
+| `send` / `inbox` | your message / your session | anything else | the conversation, encrypted at rest |
 
-Every request is OpenPGP-encrypted to a server key compiled into the tool and padded to a fixed size: 16 KB for control traffic, 224 KB for every report regardless of the photo. Anyone on the path (Cloudflare's edge, your ISP, a proxy, a Tor exit) sees that a client talked to the service and when, but not what was asked or answered, and not whether a check was a hit.
+Every request is OpenPGP-encrypted to a server key compiled into the tool and padded to a fixed size: 16 KB for control traffic, 224 KB for every report regardless of the photo. Anyone on the path (a Tor relay, or on `--direct` Cloudflare's edge and your ISP) sees that a client talked to the service and when, but not what was asked or answered, and not whether a check was a hit.
 
 ## Install
 
 Node.js 22 or later.
 
 ```bash
-git clone --branch v0.2.0 --depth 1 https://github.com/counterlure/counterlure-cli.git
+git clone --branch v0.3.0 --depth 1 https://github.com/counterlure/counterlure-cli.git
 cd counterlure-cli
 npm ci
 npm link
 ```
 
-The first `check` or `report` pulls the two models (39 MB) from OpenCV's repository and verifies each against a SHA-256 hash pinned in [lib/faceprint.js](lib/faceprint.js). A file that fails verification is deleted before it is ever loaded. Run `counterlure models` to fetch them in advance, for example before going offline or switching to Tor.
+The first `check` or `report` pulls the two models (39 MB) from OpenCV's repository and verifies each against a SHA-256 hash pinned in [lib/faceprint.js](lib/faceprint.js). A file that fails verification is deleted before it is ever loaded. Run `counterlure models` to fetch them in advance. The download takes the same route as everything else (see below).
+
+You also need Tor running on the same computer: either [Tor Browser](https://www.torproject.org/download/) left open, or the tor service (`apt install tor`, `brew install tor && brew services start tor`). The tool finds it on 127.0.0.1:9050 or 9150 by itself. Without Tor it stops and says so; it never quietly falls back to the website.
+
+## Opening an account
+
+```bash
+counterlure signup
+```
+
+Three steps, all in the terminal:
+
+1. **Username.** Pick one (3 to 32 letters, numbers, `.`, `-`, `_`). This step carries a few seconds of proof of work.
+2. **Authenticator.** A QR code is drawn in the terminal. Scan it with Aegis, 2FAS, Raivo, Google Authenticator, 1Password or any TOTP app, or type the key shown under it, then enter the 6-digit code to confirm. The authenticator is the only way in: there is no email or password to reset.
+3. **Payment.** Choose a coin (`--chain BTC`, `ETH`, `USDT_ERC20` or `USDT_TRC20`, whichever the service currently accepts). You get an address and an exact amount, as text and as a QR code. Send exactly that amount in one transaction, then paste the transaction ID. The tool checks it every minute until it has enough confirmations.
+
+When the payment confirms, the account opens and you get ten recovery codes, once. Each signs you in a single time in place of an authenticator code. Write them down offline: the tool does not store them.
+
+You can stop at any step. `counterlure signup` picks up where you left off; the token for that is kept in `signup.json` beside the session file and deleted when the account opens. Pressing Enter at the transaction prompt saves your place, so you can pay from an exchange that takes a while. If the payment needs a person to look at it, for example a slightly wrong amount, the tool says so and you can check back later. `counterlure logout` abandons a signup in progress.
+
+Unpaid signups are deleted after 30 days, and signups whose authenticator was never confirmed after an hour.
 
 ## Screening a photo (members)
 
@@ -54,11 +80,24 @@ counterlure whoami
 counterlure logout                 # revokes the session server-side and deletes it locally
 ```
 
-Membership and authenticator setup: [counterlure.com/join](https://www.counterlure.com/join). A session lasts 24 hours and is stored in `~/.config/counterlure/session.json` (Windows: `%APPDATA%\counterlure\session.json`), mode 0600 on Linux and macOS. Checks are limited to 50 per member per day.
+An account opened on the website ([counterlure.com/join](https://www.counterlure.com/join)) works here too, and the other way round. A session lasts 24 hours and is stored in `~/.config/counterlure/session.json` (Windows: `%APPDATA%\counterlure\session.json`), mode 0600 on Linux and macOS. Checks are limited to 50 per member per day.
 
 The server answers with a level only, `strong` or `possible`, and the source type (corroborated case or burn notice). It returns no similarity scores, so repeated queries with doctored images can't be used to walk toward a reported face.
 
 Screening only covers corroborated material. A face reported once, by one person, will not match. That is deliberate: a single report is an allegation, and the watchlist is not a tool for checking up on a name someone gave you once.
+
+## Messages to the team (members)
+
+```bash
+counterlure send "The profile I reported last week now uses a second handle"
+counterlure send --subject "Payment" "I sent the wrong amount, tx ..."
+counterlure send < notes.txt                   # from a file or a pipe
+counterlure send                               # type it; finish with a line holding only "."
+counterlure inbox                              # the conversation, oldest first; --all for everything
+counterlure whoami                             # also shows how many replies are unread
+```
+
+A message lands in the Counterlure team's inbox. Replies come back to `counterlure inbox`, and to the inbox on the website, which shows the same conversation. Messages are encrypted at rest, up to 4,000 characters each, 20 a day.
 
 ## Filing a report (anyone)
 
@@ -98,7 +137,7 @@ The report leaves the case, and the stored crop and template are destroyed.
 | Counts toward a case as | one source per member | **one source shared by every unattributed CLI report** |
 | Feedback | you are told privately if the case is acted on | none |
 | Proof of work | none | yes, a few seconds of CPU |
-| Limit | 20 per member per day | 3 per network per hour, 150 a day across the service |
+| Limit | 20 per member per day | 25 an hour and 150 a day across the service, shared by everyone |
 | Match result returned | no | no |
 
 Unattributed intake is where a corroboration system gets attacked: script a few hundred reports against one face and hope the volume reads as independent sourcing. So every unattributed CLI report shares a single source identity. However many are filed, they add up to one source, and a case needs at least three independent sources including a member, or five from anyone, before an analyst even looks at it. Anonymous CLI reports can strengthen a case but cannot create one.
@@ -107,17 +146,30 @@ Each unattributed report also carries a proof-of-work stamp, a SHA-256 partial p
 
 Filing a report never returns a match result, whether you are signed in or not. Reporting is not a side channel into the watchlist.
 
-## Network exposure
+## Network: no address of yours reaches us
 
-Without a proxy the service sees your IP address. For signed-in use that adds little, since it already knows the account. For unattributed reports, the service keeps a keyed hash of the address for the hourly limit and deletes it within a day. If you do not want it to see the address at all, route through Tor:
+By default the tool talks only to Counterlure's onion service:
 
-```bash
-counterlure --tor report photo.jpg --name "Anna K."             # Tor SOCKS on 127.0.0.1:9050
-counterlure --proxy socks5h://127.0.0.1:1080 check photo.jpg
-export COUNTERLURE_PROXY=socks5h://127.0.0.1:9050               # set once
+```
+4qcqgpa4o6gc7yhqvqvdndx7jeeplsishebyxwf3667kphalxxtvfkad.onion
 ```
 
-Hostnames go to the proxy unresolved, so no DNS query leaves your machine directly. Each `--tor` run uses its own circuit through Tor's SOCKS isolation, so the tool never shares an exit with your browser. The model download takes the same route. The whole network path is [lib/net.js](lib/net.js), about a hundred lines with no third-party dependencies. Cloudflare sometimes challenges Tor exits; if a request is refused, try again on a new circuit.
+The request goes from the Tor on your computer through Tor relays to Tor on our server, which hands it to a listener on 127.0.0.1 that serves nothing but this tool's API. It never touches Cloudflare, a load balancer or any public address of ours. It arrives from localhost, so there is no address of yours in it to log, store or hand over. The onion address is itself the service's public key, so no relay can impersonate us, and the OpenPGP layer works the same as on any other route.
+
+Each run uses its own Tor circuit (SOCKS isolation), so the tool never shares a path with your browser. Hostnames go to Tor unresolved: no DNS query about us leaves your machine. The tool refuses to contact an `.onion` address any way except through SOCKS, and if Tor isn't running it stops with instructions instead of trying another route.
+
+Other routes, when you ask for them:
+
+```bash
+counterlure --direct whoami                          # the website, www.counterlure.com, through Cloudflare
+counterlure --direct --tor whoami                    # the website, through Tor
+counterlure --direct --proxy socks5h://127.0.0.1:1080 whoami
+COUNTERLURE_TOR=10.0.0.5:9050 counterlure whoami     # Tor running somewhere other than 9050 or 9150
+```
+
+On `--direct` without Tor or a proxy, Cloudflare (which fronts the website) sees your address. The service itself does not keep it: no CLI operation records or rate-limits by network address, on any route.
+
+The whole network path is [lib/net.js](lib/net.js) and [lib/route.js](lib/route.js), with no third-party dependencies. The model download takes the same route.
 
 ## Reading a result
 
@@ -131,25 +183,27 @@ Protected:
 
 * **Your photo**, on `check`. It never leaves the machine.
 * **Everything beyond the face**, on `report`. Background, bystanders, location and device metadata stay with you.
-* **Content in transit.** TLS ends at Cloudflare's edge. The OpenPGP layer inside it means the edge, proxies and exits see only fixed-size ciphertext.
+* **Your network address.** On the default onion route it never reaches us. On `--direct` it reaches Cloudflare, but not our records.
+* **Content in transit.** On the onion route Tor encrypts end to end; on `--direct`, TLS ends at Cloudflare's edge. Either way the OpenPGP layer inside means relays, the edge and proxies see only fixed-size ciphertext.
 * **Integrity of answers.** A reply must be signed by the pinned key, encrypted to the one-time key generated for that request, and echo its nonce. Anything else is discarded.
 * **Replay.** The service accepts each nonce once, within five minutes of its clock.
-* **The origin.** The tool talks only to `www.counterlure.com` behind Cloudflare. No origin address is in this repository.
+* **The origin.** The tool talks to the onion service, or to `www.counterlure.com` behind Cloudflare. No origin address is in this repository.
 
 Not protected:
 
 * **Who checked.** On `check` the service knows which member asked, though it keeps no record of what was asked.
-* **Your address**, unless you use Tor or a proxy.
+* **Your address on `--direct`**, from Cloudflare, unless you add `--tor` or `--proxy`.
+* **Your payment.** Blockchains are public. The transaction is linked to your account in our records, and anyone who knows your wallet can see it on chain. Pay from a wallet that isn't tied to your name if that matters to you.
 * **The face itself, on `report`.** A face crop is personal data about the person reported. It is held encrypted, used for matching, and destroyed on withdrawal. File only on people who actually approached you.
 * **A compromised endpoint.** If your machine is compromised, nothing here helps.
 
-## Verifying the server key
+## Verifying the server key and onion address
 
-`counterlure key` prints the pinned fingerprint. Compare it against at least two independent sources: the [CLI section of the website](https://www.counterlure.com/#cli), the key served at <https://www.counterlure.com/api/cli/key>, and the tagged release on GitHub. The tool checks the compiled-in key against the pinned fingerprint before every request.
+`counterlure key` prints the pinned fingerprint and the onion address. Compare it against at least two independent sources: the [CLI section of the website](https://www.counterlure.com/#cli), the key served at <https://www.counterlure.com/api/cli/key>, and the tagged release on GitHub. The tool checks the compiled-in key against the pinned fingerprint before every request.
 
 ## Testing against your own server
 
-`COUNTERLURE_URL` points the tool at another server and `COUNTERLURE_SERVER_KEY` at a file holding its public key. The tool warns on every run while either is set. Plain `http://` is accepted only for `localhost`.
+`COUNTERLURE_URL` points the tool at another server and `COUNTERLURE_SERVER_KEY` at a file holding its public key. The tool warns on every run while either is set. `--server URL` does the same as `COUNTERLURE_URL` for one run. Plain `http://` is accepted only for `localhost` and `.onion` addresses.
 
 ```bash
 npm test

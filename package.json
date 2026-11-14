@@ -1,6 +1,6 @@
 {
   "name": "counterlure-cli",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Screen photos against the Counterlure face watchlist and file reports from a terminal. Faces are detected locally; traffic is OpenPGP-encrypted to a pinned key.",
   "type": "module",
   "license": "MIT",
