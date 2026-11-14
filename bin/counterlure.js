@@ -17,11 +17,12 @@ import { parseArgs } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { MODEL_VERSION, faceprints } from '../lib/faceprint.js';
 import { ensureModels } from '../lib/models.js';
-import { REPORT_PAD, Refused, call } from '../lib/proto.js';
+import { REPORT_PAD, Refused, call, serverFingerprint } from '../lib/proto.js';
 import { DEFAULT_BITS, MAX_BITS } from '../lib/pow.js';
 import { faceCrop } from '../lib/crop.js';
 import { SERVER_FINGERPRINT } from '../lib/server-key.js';
 import { ONION, SITE, resolveRoute } from '../lib/route.js';
+import { out, say } from '../lib/term.js';
 
 const VERSION = JSON.parse(fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'package.json'), 'utf8')).version;
 const CONTEXTS = ['dating-app', 'social-media', 'event-or-conference', 'work-or-business', 'introduced', 'other'];
@@ -54,6 +55,7 @@ Faces
   check IMAGE [IMAGE...]   Members. Screen the faces in one or more photos against corroborated
                            cases and published burn notices. Face detection and the face template
                            are computed locally; the photo itself is never sent.
+                           Photos must be JPEG, PNG or WebP; no other format is opened.
   report IMAGE             Anyone. File a report on one face. Sends a tight crop of that face only,
                            re-encoded with no metadata, plus the selectors below.
       --name NAME          the name they gave you (required)
@@ -95,15 +97,26 @@ dirs.session = path.join(dirs.config, 'session.json');
 dirs.signup = path.join(dirs.config, 'signup.json');
 dirs.models = process.env.COUNTERLURE_MODELS || path.join(dirs.config, 'models');
 
+// Saved sessions and signups are tied to the server key they came from (the key is the server's
+// identity). Pointed at another server, this tool does not find them, so a token never goes to a
+// server it was not issued by. Files written before this was recorded belong to the pinned key.
+let trustedKey = SERVER_FINGERPRINT.toLowerCase();
+
+// Written whole or not at all: to a temporary file, private from its first byte, then renamed.
 function writePrivate(file, data) {
   fs.mkdirSync(dirs.config, { recursive: true, mode: 0o700 });
-  fs.writeFileSync(file, JSON.stringify(data), { mode: 0o600 });
-  try { fs.chmodSync(file, 0o600); } catch {}
+  const tmp = `${file}.${process.pid}.tmp`;
+  try {
+    fs.writeFileSync(tmp, JSON.stringify({ ...data, key: trustedKey }), { mode: 0o600, flag: 'wx' });
+    fs.renameSync(tmp, file);
+  } finally {
+    fs.rmSync(tmp, { force: true });
+  }
 }
 function readUnexpired(file) {
   try {
     const s = JSON.parse(fs.readFileSync(file, 'utf8'));
-    if (new Date(s.expiresAt) > new Date()) return s;
+    if (new Date(s.expiresAt) > new Date() && (s.key || SERVER_FINGERPRINT).toLowerCase() === trustedKey) return s;
   } catch {}
   return null;
 }
@@ -115,7 +128,6 @@ const saveSignup = (s) => writePrivate(dirs.signup, s);
 const loadSignup = () => readUnexpired(dirs.signup);
 const forgetSignup = () => fs.rmSync(dirs.signup, { force: true });
 
-const say = (s) => process.stderr.write(`${s}\n`);
 const when = (d) => new Date(d).toLocaleString();
 // How often to ask whether a payment has arrived (shorter only in tests).
 const POLL_MS = Number(process.env.COUNTERLURE_POLL_MS) || 30_000;
@@ -197,30 +209,41 @@ async function callWithWork(server, op, args, net, extra = {}) {
   }
 }
 
+// Reads a photo and finds its faces. Only JPEG, PNG and WebP are decoded (lib/sharp.js).
+async function facesIn(file) {
+  const input = fs.readFileSync(file);
+  try {
+    return { input, faces: await faceprints(input, { modelsDir: dirs.models }) };
+  } catch (e) {
+    if (/unsupported image format/i.test(e.message)) throw new Error(`${file} is not a JPEG, PNG or WebP image.`);
+    throw e;
+  }
+}
+
 async function check(s, files, net, server, json) {
   await models(net);
-  const out = [];
+  const results = [];
   for (const file of files) {
-    const faces = await faceprints(fs.readFileSync(file), { modelsDir: dirs.models });
-    if (!faces.length) { out.push({ file, faces: [], note: 'no face found' }); continue; }
+    const { faces } = await facesIn(file);
+    if (!faces.length) { results.push({ file, faces: [], note: 'no face found' }); continue; }
     const r = await call(server, 'check', { token: s.token, model: MODEL_VERSION, faces: faces.map((f) => f.embedding) }, net);
-    out.push({ file, checksLeft: r.checksLeft, faces: faces.map((f, i) => ({ box: f.box, small: f.box.w < 64, matches: r.results[i] })) });
+    results.push({ file, checksLeft: r.checksLeft, faces: faces.map((f, i) => ({ box: f.box, small: f.box.w < 64, matches: r.results?.[i] ?? [] })) });
   }
-  if (json) return console.log(JSON.stringify(out, null, 2));
+  if (json) return out(JSON.stringify(results, null, 2));
   let any = false;
-  for (const r of out) {
-    console.log(`\n${r.file}`);
-    if (!r.faces.length) { console.log('  No face found. Use a clearer, front-facing photo.'); continue; }
+  for (const r of results) {
+    out(`\n${r.file}`);
+    if (!r.faces.length) { out('  No face found. Use a clearer, front-facing photo.'); continue; }
     r.faces.forEach((f, i) => {
       const where = `face ${i + 1} at ${f.box.x},${f.box.y} (${f.box.w}x${f.box.h}px)${f.small ? ', small: low confidence' : ''}`;
-      if (!f.matches.length) return console.log(`  ${where}: no match`);
+      if (!f.matches.length) return out(`  ${where}: no match`);
       any = true;
-      console.log(`  ${where}:`);
-      for (const m of f.matches) console.log(`    ${level(m)}`);
+      out(`  ${where}:`);
+      for (const m of f.matches) out(`    ${level(m)}`);
     });
-    if (r.checksLeft !== undefined) console.log(`  (${r.checksLeft} checks left today)`);
+    if (r.checksLeft !== undefined) out(`  (${r.checksLeft} checks left today)`);
   }
-  console.log(any
+  out(any
     ? '\nA match is a lead, not an identification. Faces resemble each other. Corroborate through other\nmeans before acting, and never harass or publish anyone on the strength of this result.\nIf you have something new on this person, file it: counterlure report IMAGE --name ...'
     : '\nNo match is not a clearance: only faces already reported can match.');
 }
@@ -237,8 +260,7 @@ async function report(file, o, s, net, route) {
   if (!o.yes && !o['dry-run'] && !process.stdin.isTTY) throw new Error('No terminal to confirm on. Re-run with --yes to make the statement non-interactively.');
 
   await models(net);
-  const input = fs.readFileSync(file);
-  const faces = await faceprints(input, { modelsDir: dirs.models });
+  const { input, faces } = await facesIn(file);
   if (!faces.length) throw new Error('No face found. Use a clearer, front-facing photo.');
   const list = () => faces.map((f, i) => `  ${i + 1}: at ${f.box.x},${f.box.y} (${f.box.w}x${f.box.h}px)`).join('\n');
   const n = o.face === undefined ? 1 : Number(o.face);
@@ -270,10 +292,10 @@ async function report(file, o, s, net, route) {
   let r;
   if (asMember) r = await call(route.server, 'report', { ...args, token: s.token }, { ...net, padTo: REPORT_PAD });
   else r = await callWithWork(route.server, 'report', args, net, { padTo: REPORT_PAD });
-  if (o.json) return console.log(JSON.stringify({ receipt: r.receipt, attributedTo: r.attributedTo }));
-  console.log(`\nFiled. Receipt: ${r.receipt}`);
-  console.log('Keep the receipt offline. It is the only way to withdraw this report, and this tool does not store it.');
-  if (!r.attributedTo) console.log('Filed unattributed: nobody can contact you about it, and it adds weight only alongside other sources.');
+  if (o.json) return out(JSON.stringify({ receipt: r.receipt, attributedTo: r.attributedTo }));
+  out(`\nFiled. Receipt: ${r.receipt}`);
+  out('Keep the receipt offline. It is the only way to withdraw this report, and this tool does not store it.');
+  if (!r.attributedTo) out('Filed unattributed: nobody can contact you about it, and it adds weight only alongside other sources.');
 }
 
 // ------------------------------------------------------------------ signup
@@ -501,8 +523,8 @@ async function finish(st, sign, server, net) {
     }
     await call(server, 'codes_saved', { token: sess.token }, net);
   }
-  console.log(`\nSigned in as ${sess.username} until ${when(sess.expiresAt)}.`);
-  console.log('Next: counterlure check PHOTO, counterlure inbox, or counterlure send "a message to the team".');
+  out(`\nSigned in as ${sess.username} until ${when(sess.expiresAt)}.`);
+  out('Next: counterlure check PHOTO, counterlure inbox, or counterlure send "a message to the team".');
 }
 
 async function signup(o, server, net) {
@@ -572,17 +594,17 @@ function showThread(r, all) {
   const msgs = [...r.messages].reverse(); // oldest first, like a conversation
   const shown = all ? msgs : msgs.slice(-10);
   if (!msgs.length) {
-    console.log('No messages yet. Write to the team with: counterlure send "your message"');
+    out('No messages yet. Write to the team with: counterlure send "your message"');
     return;
   }
-  if (shown.length < msgs.length) console.log(`(${msgs.length - shown.length} earlier messages; --all shows them)\n`);
+  if (shown.length < msgs.length) out(`(${msgs.length - shown.length} earlier messages; --all shows them)\n`);
   for (const m of shown) {
     const who = m.from === 'admin' ? 'Counterlure' : 'You';
     const fresh = m.from === 'admin' && !m.readAt ? '  [new]' : '';
-    console.log(`--- ${who}, ${when(m.createdAt)}${fresh}`);
-    if (m.subject) console.log(`Subject: ${m.subject}`);
-    if (m.caseId) console.log('About one of your reports.');
-    console.log(`${m.body}\n`);
+    out(`--- ${who}, ${when(m.createdAt)}${fresh}`);
+    if (m.subject) out(`Subject: ${m.subject}`);
+    if (m.caseId) out('About one of your reports.');
+    out(`${m.body}\n`);
   }
 }
 
@@ -612,11 +634,11 @@ async function main() {
     },
   });
   const [cmd, ...rest] = positionals;
-  if (o.version) return console.log(VERSION);
+  if (o.version) return out(VERSION);
   if (o.help || !cmd) return process.stdout.write(HELP);
 
   if (cmd === 'key') {
-    console.log([
+    out([
       'Pinned Counterlure CLI key fingerprint:',
       `  ${SERVER_FINGERPRINT.toUpperCase().replace(/(.{4})/g, '$1 ').trim()}`,
       'Onion service this tool talks to by default:',
@@ -630,11 +652,12 @@ async function main() {
   const route = await resolveRoute(o);
   const net = { proxy: route.proxy };
   const server = route.server;
+  trustedKey = await serverFingerprint();
   if (route.custom || !route.onion) say(`note: ${route.label}`);
 
   if (cmd === 'models') {
     await models(net);
-    console.log(`Models verified in ${dirs.models}`);
+    out(`Models verified in ${dirs.models}`);
     return;
   }
   if (cmd === 'signup' || cmd === 'pay') return signup(o, server, net);
@@ -649,14 +672,14 @@ async function main() {
     }
     saveSession({ server, token: r.token, username: r.username, expiresAt: r.expiresAt });
     forgetSignup();
-    console.log(`Signed in as ${r.username} until ${when(r.expiresAt)}.`);
-    if (r.recoveryLeft !== undefined) console.log(`You used a recovery code: ${r.recoveryLeft} left. Re-enrol your authenticator on the website.`);
+    out(`Signed in as ${r.username} until ${when(r.expiresAt)}.`);
+    if (r.recoveryLeft !== undefined) out(`You used a recovery code: ${r.recoveryLeft} left. Re-enrol your authenticator on the website.`);
     return;
   }
   if (cmd === 'withdraw') {
     if (rest.length !== 1) throw new Error('Usage: counterlure withdraw RECEIPT');
     await call(server, 'withdraw', { receipt: rest[0] }, net);
-    console.log('Withdrawn. The stored face crop and template have been destroyed.');
+    out('Withdrawn. The stored face crop and template have been destroyed.');
     return;
   }
 
@@ -670,7 +693,7 @@ async function main() {
     if (s || sign) await call(server, 'logout', { token: s?.token, signupToken: sign?.signupToken }, net).catch(() => {});
     forgetSession();
     forgetSignup();
-    console.log(sign && !s ? 'Signup abandoned. Its saved state was deleted here.' : 'Signed out. The saved session was deleted.');
+    out(sign && !s ? 'Signup abandoned. Its saved state was deleted here.' : 'Signed out. The saved session was deleted.');
     return;
   }
   if (!s) {
@@ -680,13 +703,13 @@ async function main() {
   }
   if (cmd === 'whoami') {
     const r = await call(server, 'whoami', { token: s.token }, net);
-    console.log(`${r.username} (session valid until ${when(s.expiresAt)})`);
-    if (r.unread) console.log(`${r.unread} unread message${r.unread === 1 ? '' : 's'} from the team. Run: counterlure inbox`);
+    out(`${r.username} (session valid until ${when(s.expiresAt)})`);
+    if (r.unread) out(`${r.unread} unread message${r.unread === 1 ? '' : 's'} from the team. Run: counterlure inbox`);
     return;
   }
   if (cmd === 'inbox') {
     const r = await call(server, 'inbox', { token: s.token, markRead: true }, net);
-    if (o.json) return console.log(JSON.stringify(r, null, 2));
+    if (o.json) return out(JSON.stringify(r, null, 2));
     return showThread(r, o.all);
   }
   if (cmd === 'send') {
@@ -694,8 +717,8 @@ async function main() {
     if (!body) throw new Error('Nothing to send. Usage: counterlure send "your message" [--subject S]');
     if (body.length > 4000) throw new Error(`Messages are 4000 characters at most (this one is ${body.length}).`);
     const r = await call(server, 'send', { token: s.token, subject: o.subject, body }, net);
-    if (o.json) return console.log(JSON.stringify(r));
-    console.log('Sent to the Counterlure team. Replies arrive in: counterlure inbox');
+    if (o.json) return out(JSON.stringify(r));
+    out('Sent to the Counterlure team. Replies arrive in: counterlure inbox');
     return;
   }
   if (cmd === 'check') {
@@ -705,4 +728,4 @@ async function main() {
   throw new Error(`Unknown command "${cmd}". Run: counterlure --help`);
 }
 
-main().catch((e) => { process.stderr.write(`error: ${e.message}\n`); process.exitCode = 1; });
+main().catch((e) => { say(`error: ${e.message}`); process.exitCode = 1; });
