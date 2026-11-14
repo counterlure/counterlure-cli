@@ -42,7 +42,7 @@ Every request is OpenPGP-encrypted to a server key compiled into the tool and pa
 Node.js 22 or later.
 
 ```bash
-git clone --branch v0.3.0 --depth 1 https://github.com/counterlure/counterlure-cli.git
+git clone --branch v0.3.1 --depth 1 https://github.com/counterlure/counterlure-cli.git
 cd counterlure-cli
 npm ci
 npm link
@@ -62,11 +62,13 @@ Three steps, all in the terminal:
 
 1. **Username.** Pick one (3 to 32 letters, numbers, `.`, `-`, `_`). This step carries a few seconds of proof of work.
 2. **Authenticator.** A QR code is drawn in the terminal. Scan it with Aegis, 2FAS, Raivo, Google Authenticator, 1Password or any TOTP app, or type the key shown under it, then enter the 6-digit code to confirm. The authenticator is the only way in: there is no email or password to reset.
-3. **Payment.** Choose a coin (`--chain BTC`, `ETH`, `USDT_ERC20` or `USDT_TRC20`, whichever the service currently accepts). You get an address and an exact amount, as text and as a QR code. Send exactly that amount in one transaction, then paste the transaction ID. The tool checks it every minute until it has enough confirmations.
+3. **Payment.** Choose a coin (for example `--chain USDC_BASE`, `ETH_BASE`, `USDC_ERC20`, `USDT_ERC20` or `ETH`, whichever the service currently accepts). You get a payment address made for your account alone, the amount, and the time until which the address may be used, as text and as a QR code. Send at least the amount before that time, then press Enter: the tool waits until the payment is found and confirmed. You can also paste the transaction ID instead.
+
+   **Never send to an address after its time is up.** The tool says when it has expired and stops showing it; run `counterlure signup` again to get a new one.
 
 When the payment confirms, the account opens and you get ten recovery codes, once. Each signs you in a single time in place of an authenticator code. Write them down offline: the tool does not store them.
 
-You can stop at any step. `counterlure signup` picks up where you left off; the token for that is kept in `signup.json` beside the session file and deleted when the account opens. Pressing Enter at the transaction prompt saves your place, so you can pay from an exchange that takes a while. If the payment needs a person to look at it, for example a slightly wrong amount, the tool says so and you can check back later. `counterlure logout` abandons a signup in progress.
+You can stop at any step. `counterlure signup` picks up where you left off; the token for that is kept in `signup.json` beside the session file and deleted when the account opens. Typing `q` at the payment prompt saves your place, so you can pay from an exchange that takes a while; the payment is found whenever it arrives within the address's time. If the payment needs a person to look at it, for example a slightly wrong amount, the tool says so and you can check back later. `counterlure logout` abandons a signup in progress.
 
 Unpaid signups are deleted after 30 days, and signups whose authenticator was never confirmed after an hour.
 
@@ -211,4 +213,8 @@ npm test
 
 ## Licence
 
-MIT (see [LICENSE](LICENSE)). The models are not distributed here. They are fetched from OpenCV's model zoo: YuNet under MIT, SFace under Apache 2.0.
+Apache License 2.0 (see [LICENSE](LICENSE) and [NOTICE](NOTICE)). Versions up to 0.3.0 were released under MIT and stay under MIT.
+
+You may read, run, change and share the code. The licence gives no right to the Counterlure name: a changed copy must not call itself Counterlure or the official CLI. Only releases from this repository are official, and only they hold the pinned server key that checks every reply comes from Counterlure.
+
+The models are not distributed here. They are fetched from OpenCV's model zoo: YuNet under MIT, SFace under Apache 2.0.

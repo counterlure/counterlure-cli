@@ -117,6 +117,10 @@ const forgetSignup = () => fs.rmSync(dirs.signup, { force: true });
 
 const say = (s) => process.stderr.write(`${s}\n`);
 const when = (d) => new Date(d).toLocaleString();
+// How often to ask whether a payment has arrived (shorter only in tests).
+const POLL_MS = Number(process.env.COUNTERLURE_POLL_MS) || 30_000;
+// Rechecks of a pasted transaction ID; the same variable shortens both for tests.
+const CONFIRM_POLL_MS = Number(process.env.COUNTERLURE_POLL_MS) || 60_000;
 const sleep = (ms) => new Promise((ok) => setTimeout(ok, ms));
 
 // One reader for every prompt, so text typed or piped ahead (several answers at once, a pasted
@@ -299,45 +303,147 @@ async function pickChain(o, server, net) {
     '',
     'Step 2 of 3: choose how to pay',
     `  Membership: $${opts.priceUsd}${sale}, paid once in crypto. No card, no name, no address.`,
+    opts.autoDetect ? `  You get a payment address made for your account alone, valid for ${span(opts.addressMinutes * 60000)}.` : null,
     '',
     ...opts.chains.map((c, i) => `  ${i + 1}. ${c.label}  (--chain ${c.id})`),
     '',
-  ].join('\n'));
+  ].filter((l) => l !== null).join('\n'));
+  const byId = (a) => opts.chains.find((c) => c.id.toLowerCase() === String(a).trim().toLowerCase());
   if (o.chain) {
-    if (!opts.chains.some((c) => c.id === o.chain)) throw new Error(`--chain must be one of: ${opts.chains.map((c) => c.id).join(', ')}`);
-    return o.chain;
+    const hit = byId(o.chain);
+    if (!hit) throw new Error(`--chain must be one of: ${opts.chains.map((c) => c.id).join(', ')}`);
+    return hit.id;
   }
   for (let tries = 0; tries < 3; tries++) {
     const a = await ask(`Pay with (1-${opts.chains.length}): `);
-    const hit = opts.chains[Number(a) - 1] || opts.chains.find((c) => c.id === a.toLowerCase());
+    const hit = opts.chains[Number(a) - 1] || byId(a);
     if (hit) return hit.id;
     if (!process.stdin.isTTY) break;
   }
   throw new Error(`Choose a payment method: counterlure signup --chain ${opts.chains[0]?.id || 'ID'}`);
 }
 
+// "1 h 05 min", "12 min": what is left of an address's window.
+function span(ms) {
+  const m = Math.max(1, Math.ceil(ms / 60000));
+  return m >= 60 ? `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, '0')} min` : `${m} min`;
+}
+
+// When the order's address stops taking payments, on this computer's clock. The server says what its
+// own clock read (serverNow), so a computer whose clock is off still counts down correctly.
+const deadline = (st) => Date.now() + (Date.parse(st.expiresAt) - Date.parse(st.serverNow || new Date().toISOString()));
+
 function showOrder(st) {
+  if (!st.autoDetect) {
+    return say([
+      '',
+      'Step 3 of 3: pay',
+      `  Send exactly   ${st.amount} ${st.symbol}`,
+      `  on             ${st.chainLabel}`,
+      `  to             ${st.address}`,
+      '',
+      '  The exact amount, down to the last digit, is how this payment is matched to your signup.',
+      '  Send it in one transaction and do not round it. Sending from an exchange is fine.',
+      st.expiresAt ? `  The amount is held for you until ${when(st.expiresAt)}.` : '',
+      '',
+      indent(st.qrText),
+      '',
+    ].join('\n'));
+  }
+  const end = deadline(st);
   say([
     '',
     'Step 3 of 3: pay',
-    `  Send exactly   ${st.amount} ${st.symbol}`,
+    `  Send           ${st.amount} ${st.symbol}`,
     `  on             ${st.chainLabel}`,
     `  to             ${st.address}`,
+    `  send before    ${when(end)}  (${span(end - Date.now())} from now)`,
     '',
-    '  The exact amount, down to the last digit, is how this payment is matched to your signup.',
-    '  Send it in one transaction and do not round it. Sending from an exchange is fine.',
-    st.expiresAt ? `  The amount is held for you until ${when(st.expiresAt)}.` : '',
+    '  This address was made for your account alone, so the payment is found by itself: no',
+    '  transaction ID needed. Send at least the amount, from your own wallet or an exchange.',
+    `  Do not send to this address after ${when(end)}. After that, run counterlure signup again`,
+    '  for a new address.',
     '',
     indent(st.qrText),
     '',
-  ].filter((l) => l !== null).join('\n'));
+  ].join('\n'));
+}
+
+// Waits for a payment to the member's own address to be found, asking the server every 30 s.
+// Returns the next state (done, or chain when the address expired with nothing sent), or null to stop.
+async function awaitPayment(st, sign, server, net) {
+  const end = deadline(st);
+  let warned = false;
+  let seen = '';
+  say('Waiting for the payment to arrive. This can take a few minutes after it is sent. Ctrl-C stops;');
+  say(`${resumeHint.replace('Run: ', 'later run ')}`);
+  // Up to the end of the window plus 3 hours for a payment already seen to confirm.
+  for (const stop = end + 3 * 3600_000; Date.now() < stop;) {
+    await sleep(POLL_MS);
+    let r;
+    try {
+      r = await call(server, 'signup_state', { signupToken: sign.signupToken }, net);
+    } catch (e) {
+      if (e instanceof Refused) throw e;
+      say(`Could not reach the server (${e.message}). Trying again.`);
+      continue;
+    }
+    // The window ended while waiting: the server is back at choosing a coin. Name the address here,
+    // once, so the generic notice in the main loop is not repeated.
+    if (r.step === 'chain') {
+      say(`\nThe address ${st.address} has expired. Do NOT send to it.`);
+      return { ...r, lastOrderExpired: false };
+    }
+    if (r.step !== 'pay') return r;
+    if (r.status === 'review') return r;
+    if (r.detected) {
+      const now = `${r.detected.amount} ${r.detected.chainLabel}`;
+      if (now !== seen) say(`Payment seen: ${now}. Waiting for it to confirm on the network.`);
+      seen = now;
+      continue;
+    }
+    const left = end - Date.now();
+    if (left <= 0 || r.addressExpired || !r.address) {
+      say(`\nThe address ${st.address} has expired. Do NOT send to it.`);
+      return r;
+    }
+    if (left < 10 * 60000 && !warned) {
+      warned = true;
+      say(`Less than ${span(left)} left on this address. If your payment is not on its way, do not send it now: wait, and run counterlure signup again for a new address.`);
+    }
+  }
+  say(`Nothing confirmed yet. ${resumeHint}`);
+  return null;
 }
 
 const resumeHint = 'Run: counterlure signup   (it picks up where it stopped)';
 
+function reviewed(r) {
+  say(`\nThe payment needs a person to look at it${r.reason ? ` (${r.reason})` : ''}. That usually takes under a day.\n${resumeHint}\nTo add a note, open the website's inbox once your account is open, or wait for the review.`);
+  return null;
+}
+
 // Payment: ask for the transaction ID, then check until it is confirmed or needs a person.
 async function settle(st, sign, server, net) {
   let txHash = st.txHash || sign.txHash;
+  if (!txHash && st.autoDetect) {
+    if (st.status === 'review') return reviewed(st);
+    if (st.detected) {
+      say(`\nPayment seen: ${st.detected.amount} ${st.detected.chainLabel}. Waiting for it to confirm on the network.`);
+      return awaitPayment(st, sign, server, net);
+    }
+    if (!st.address) {
+      // Its window ended: the server never hands it out again.
+      say('\nThat payment address has expired. Do NOT send to it. Choose again for a new one.');
+      return { step: 'chain', lastOrderExpired: true };
+    }
+    showOrder(st);
+    const a = await prompt('Once sent, press Enter to wait for it (or paste the transaction ID, or type q to finish later): ');
+    if (a === null || a.trim().toLowerCase() === 'q') { say(`\nNothing to check yet. ${resumeHint}`); return null; }
+    if (!a.trim()) return awaitPayment(st, sign, server, net);
+    txHash = a.trim();
+    saveSignup({ ...sign, txHash });
+  }
   if (!txHash) {
     showOrder(st);
     txHash = await ask('Once sent, paste the transaction ID (or press Enter to finish later): ');
@@ -358,10 +464,7 @@ async function settle(st, sign, server, net) {
       continue;
     }
     if (r.step !== 'pay') return r;
-    if (r.status === 'review') {
-      say(`\nThe payment needs a person to look at it${r.reason ? ` (${r.reason})` : ''}. That usually takes under a day.\n${resumeHint}\nTo add a note, open the website's inbox once your account is open, or wait for the review.`);
-      return null;
-    }
+    if (r.status === 'review') return reviewed(r);
     if (r.state === 'mismatch') {
       say(`\n${r.reason || 'That transaction does not match this order.'}`);
       saveSignup({ ...sign, txHash: undefined });
@@ -371,7 +474,7 @@ async function settle(st, sign, server, net) {
       continue;
     }
     say(`${r.reason || 'Not confirmed yet.'} Checking again in a minute. Ctrl-C stops; ${resumeHint.replace('Run: ', 'later run ')}`);
-    await sleep(60000);
+    await sleep(CONFIRM_POLL_MS);
   }
   say(`Still waiting on the network. ${resumeHint}`);
   return null;
@@ -444,6 +547,7 @@ async function signup(o, server, net) {
       say('Authenticator linked.');
       st = await call(server, 'signup_state', { signupToken: sign.signupToken }, net);
     } else if (st.step === 'chain') {
+      if (st.lastOrderExpired) say('\nYour last payment address expired before a payment reached it. Do NOT send to it any more.');
       const chain = await pickChain(o, server, net);
       st = await call(server, 'pay_order', { signupToken: sign.signupToken, chain }, net);
       saveSignup({ ...sign, txHash: undefined });
@@ -451,6 +555,7 @@ async function signup(o, server, net) {
     } else if (st.step === 'pay') {
       const r = await settle(st, sign, server, net);
       if (!r) return;
+      if (r.step === 'pay' && r.status === 'review') return reviewed(r);
       st = r;
     } else if (st.step === 'done' || st.step === 'active') {
       return finish(st, sign, server, net);
