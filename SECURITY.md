@@ -1,15 +1,27 @@
 # Security
 
-## Reporting a problem
+## Reporting a vulnerability
 
-Please report security problems privately through GitHub: on this repository's **Security** tab, choose **Report a vulnerability**. Do not open a public issue for them.
+Report privately through GitHub: this repository's **Security** tab, **Report a vulnerability**. Do not open a public issue.
 
-We aim to answer within 7 days. Please give us a reasonable time to fix a problem before you publish it.
+We acknowledge within 7 days and ask for a reasonable window to fix before disclosure. Credit is given unless you prefer otherwise.
 
-In scope: this tool, the encrypted protocol it uses, and the `/api/cli` endpoint of www.counterlure.com. Please don't test against other members' accounts, don't run automated scans against the website, and don't try to get around Cloudflare's protection.
+In scope:
 
-## What we check before each release
+* this tool, including the crop and metadata handling in `lib/crop.js`
+* the `counterlure-cli/1` protocol: envelope, padding, nonce and replay handling, reply signatures, proof of work
+* the `/api/cli` endpoint of www.counterlure.com
 
-* The server key fingerprint in `lib/server-key.js` matches https://www.counterlure.com/api/cli/key.
-* The model hashes in `lib/faceprint.js` match OpenCV's published files.
-* Dependencies are pinned to exact versions, and `package-lock.json` is committed.
+Of particular interest: anything that lets a request or reply be read or altered in transit, lets unattributed reports count as more than one source, lets a report or check leak match information, lets source-photo metadata or other faces reach the server, or reveals a reporter's network address beyond what the README states.
+
+Out of scope: other members' accounts, automated scanning of the website, volumetric testing, and attempts to get around Cloudflare's protections. Test protocol issues against your own server instead (see "Testing against your own server" in the README).
+
+## Release checks
+
+Before each tagged release:
+
+* The server key fingerprint in `lib/server-key.js` matches https://www.counterlure.com/api/cli/key and the website's CLI section.
+* The model hashes in `lib/faceprint.js` match OpenCV's published files, and `lib/faceprint.js` is identical to the server's copy, so local templates match what the service indexes.
+* Dependencies are pinned to exact versions and `package-lock.json` is committed. CI installs with `--ignore-scripts`.
+* GitHub Actions are pinned to commit hashes.
+* `npm test` passes, including the crop metadata tests and fixed request sizes.

@@ -1,93 +1,160 @@
 # counterlure-cli
 
-Check a photo against faces reported to [Counterlure](https://www.counterlure.com) without the photo leaving your computer.
+Command-line access to [Counterlure](https://www.counterlure.com), a register of honeypot and social-engineering approaches against people in tech.
 
-Counterlure collects reports of honeypot and social-engineering approaches aimed at people in tech. When several people independently report the same face, it is flagged. This tool lets members check someone's photo against those flagged faces and against published burn notices.
+Counterlure looks for one face turning up under different names. Reports come in from people who were approached. When enough independent sources report the same face, an analyst reviews the case, and corroborated cases can end in a published burn notice. This tool gives you two things from a terminal:
+
+* **Screen** a photo against corroborated cases and burn notices without the photo leaving your machine. This needs a member account.
+* **File** a report on a face. This needs no account at all.
 
 ```
 $ counterlure check profile.jpg
 
 profile.jpg
   face 1 at 198,200 (168x206px):
-    STRONG POSSIBLE MATCH with a face reported by 7 independent people
+    STRONG POSSIBLE MATCH with a face reported by 7 independent sources
+
+$ counterlure report profile.jpg --name "Anna K." --context dating-app --handle @anna.k
+...
+Filed. Receipt: CL-7Q2M-XK4D-91TF-HC3P
 ```
 
-## How it works
+## What leaves your machine
 
-1. **On your computer**, the photo is decoded and two open models from [OpenCV's model zoo](https://github.com/opencv/opencv_zoo) run locally: YuNet finds faces, SFace turns each face into a fingerprint of 128 numbers.
-2. The fingerprints (never the photo) are put in a request, padded to a fixed size and **encrypted with OpenPGP** to Counterlure's server key. That key is built into this tool and checked against a pinned fingerprint.
-3. Each request carries a one-time key made for that request alone. The server's answer must be encrypted to it, signed by the pinned server key, and echo a random nonce, or the tool discards it.
-4. The server compares the fingerprints with its list and answers with a level only: `strong` or `possible`, plus the source. No similarity scores are returned, so repeated queries can't be used to home in on a reported face.
+Face detection (YuNet) and face templating (SFace) run locally on open models from [OpenCV's model zoo](https://github.com/opencv/opencv_zoo). What is transmitted depends on the operation.
 
-The server stores **nothing** about a check: not the fingerprint, not the result. It keeps a count per member per day for the limit of 50 checks.
+| Operation | Sent | Never sent | Kept by the service |
+|---|---|---|---|
+| `check` | one 128-number SFace template per face | the photo, file names, EXIF | nothing about the query; a per-member daily counter |
+| `report` | a crop of the chosen face, the name given, context, optional handle | the rest of the photo, other faces in frame, EXIF/GPS, device data | the crop and template (encrypted at rest), name and handle (sealed), a hash of the receipt |
+| `withdraw` | the receipt | anything else | nothing: the crop and template are destroyed |
+
+Every request is OpenPGP-encrypted to a server key compiled into the tool and padded to a fixed size: 16 KB for control traffic, 224 KB for every report regardless of the photo. Anyone on the path (Cloudflare's edge, your ISP, a proxy, a Tor exit) sees that a client talked to the service and when, but not what was asked or answered, and not whether a check was a hit.
 
 ## Install
 
-Needs Node.js 22 or newer.
+Node.js 22 or later.
 
 ```bash
-git clone --branch v0.1.0 --depth 1 https://github.com/counterlure/counterlure-cli.git
+git clone --branch v0.2.0 --depth 1 https://github.com/counterlure/counterlure-cli.git
 cd counterlure-cli
 npm ci
-npm link        # makes the `counterlure` command available
+npm link
 ```
 
-On first use the tool downloads the two models (39 MB) from OpenCV's repository on GitHub and checks each against a SHA-256 hash pinned in [lib/faceprint.js](lib/faceprint.js). A file that doesn't match is deleted.
+The first `check` or `report` pulls the two models (39 MB) from OpenCV's repository and verifies each against a SHA-256 hash pinned in [lib/faceprint.js](lib/faceprint.js). A file that fails verification is deleted before it is ever loaded. Run `counterlure models` to fetch them in advance, for example before going offline or switching to Tor.
 
-## Use
-
-You need a Counterlure member account with an authenticator app set up ([join here](https://www.counterlure.com/join)).
+## Screening a photo (members)
 
 ```bash
-counterlure login                  # username, then the 6-digit code from your authenticator app
-counterlure check photo.jpg        # one or more photos
-counterlure check --json photo.jpg # for scripts
+counterlure login                  # username, then the 6-digit authenticator code
+counterlure check a.jpg b.jpg      # every face in every photo
+counterlure check --json a.jpg     # for pipelines
 counterlure whoami
-counterlure logout                 # ends the sign-in on the server and deletes it here
-counterlure key                    # shows the pinned server key fingerprint
-counterlure models                 # downloads and verifies the models now
+counterlure logout                 # revokes the session server-side and deletes it locally
 ```
 
-A sign-in lasts 24 hours. It is saved in `~/.config/counterlure/session.json` (Windows: `%APPDATA%\counterlure\session.json`), readable only by you on Linux and macOS. On Windows the folder is in your own profile; protect it as you would your browser's.
+Membership and authenticator setup: [counterlure.com/join](https://www.counterlure.com/join). A session lasts 24 hours and is stored in `~/.config/counterlure/session.json` (Windows: `%APPDATA%\counterlure\session.json`), mode 0600 on Linux and macOS. Checks are limited to 50 per member per day.
 
-### Through Tor or a proxy
+The server answers with a level only, `strong` or `possible`, and the source type (corroborated case or burn notice). It returns no similarity scores, so repeated queries with doctored images can't be used to walk toward a reported face.
+
+Screening only covers corroborated material. A face reported once, by one person, will not match. That is deliberate: a single report is an allegation, and the watchlist is not a tool for checking up on a name someone gave you once.
+
+## Filing a report (anyone)
 
 ```bash
-counterlure --tor check photo.jpg                        # Tor running on 127.0.0.1:9050
-counterlure --proxy socks5h://127.0.0.1:1080 check photo.jpg
-export COUNTERLURE_PROXY=socks5h://127.0.0.1:9050         # or set it once
+counterlure report photo.jpg --name "Anna K." --context dating-app --handle @anna.k
 ```
 
-Hostnames are always handed to the proxy unresolved, so no DNS lookup leaves your computer directly. With `--tor`, each run asks Tor for its own circuit. The proxy code is in [lib/net.js](lib/net.js) with no extra dependencies, so you can read the whole network path in one file. The model download goes through the same proxy.
+| Option | |
+|---|---|
+| `--name` | the name they used with you. Required. A cover name is still useful: the same face under several names is the signal. |
+| `--context` | where the approach happened: `dating-app`, `social-media`, `event-or-conference`, `work-or-business`, `introduced`, `other` |
+| `--handle` | the profile, handle or URL they used. Optional. Sealed on arrival. |
+| `--face N` | which face, when the photo has more than one. The tool refuses to guess and lists them. |
+| `--dry-run` | do everything except transmit |
+| `--save-crop FILE` | write the exact JPEG that is, or would be, sent, so you can inspect it |
+| `--anon` | file unattributed even while signed in |
+| `--yes` | skip the prompt for scripted use; you are still making the statement below |
 
-## Reading results
+Before anything is sent you are shown a summary of exactly what will leave, and asked to confirm this statement:
 
-* **A match is a lead, not proof.** Faces can look alike, and face recognition is less accurate on small, blurry, side-on or heavily filtered photos. Verify the person through other means before you act.
-* **No match does not mean someone is safe.** Only faces that have been reported can match.
-* Never harass, threaten or publish anyone based on a result. If you have new information, report it at [counterlure.com](https://www.counterlure.com).
+> I am in contact with this person personally and I am unsure about their intentions. I am not using this to track an ex-partner or anyone else, and nothing about my report is based on their nationality or ethnicity.
 
-## Privacy and threat model
+**The crop.** The photo is decoded to raw pixels, rotated upright, cut down to the chosen face plus a margin, and encoded as a new JPEG of at most 480 px. The margin shrinks if it would take in another detected face. Because the output is built from pixels and not copied from the source file, no EXIF, GPS position, device serial, colour profile or embedded thumbnail can survive into it. Check this yourself with `--dry-run --save-crop crop.jpg` and any metadata viewer.
 
-What this protects:
+**The receipt.** A successful report returns a receipt such as `CL-7Q2M-XK4D-91TF-HC3P`. It is the only handle on the report: the tool does not store it, and the service holds only a keyed hash of it. Record it offline. To withdraw:
 
-* **Your photo** never leaves your computer.
-* **What you check and what comes back** are encrypted end to end between this tool and Counterlure's server. HTTPS ends at Cloudflare's network in front of the server; the OpenPGP layer means Cloudflare, proxies and anyone else in between see only that you sent a padded, encrypted blob.
-* **Answers can't be forged** by anyone in the middle: they must be signed by the pinned key and tied to your request.
-* **Counterlure's server address** is not in this repository or used by it: the tool talks only to `www.counterlure.com`, which is served through Cloudflare.
+```bash
+counterlure withdraw CL-7Q2M-XK4D-91TF-HC3P
+```
 
-What it does not protect:
+The report leaves the case, and the stored crop and template are destroyed.
 
-* **Counterlure knows which member made a check**, because you sign in. It does not keep what you checked.
-* **Your IP address is visible** to Cloudflare and to Counterlure unless you use Tor or a proxy. Cloudflare's bot protection sometimes blocks Tor exits; if so, try again later or use another proxy.
-* **The model download** comes from GitHub, which sees your IP address unless you use a proxy.
-* **A face fingerprint is personal data.** It can't be turned back into a good photo, but it can be compared with other photos of the same face. It is sent encrypted and is not stored.
+### Attributed and unattributed reports
 
-Check the pinned key yourself: the fingerprint printed by `counterlure key` should match the one at https://www.counterlure.com/#cli and the key served at https://www.counterlure.com/api/cli/key.
+| | Signed in | No account, or `--anon` |
+|---|---|---|
+| Counts toward a case as | one source per member | **one source shared by every unattributed CLI report** |
+| Feedback | you are told privately if the case is acted on | none |
+| Proof of work | none | yes, a few seconds of CPU |
+| Limit | 20 per member per day | 3 per network per hour, 150 a day across the service |
+| Match result returned | no | no |
 
-## For testing against your own server
+Unattributed intake is where a corroboration system gets attacked: script a few hundred reports against one face and hope the volume reads as independent sourcing. So every unattributed CLI report shares a single source identity. However many are filed, they add up to one source, and a case needs at least three independent sources including a member, or five from anyone, before an analyst even looks at it. Anonymous CLI reports can strengthen a case but cannot create one.
 
-`COUNTERLURE_URL` points the tool at another server and `COUNTERLURE_SERVER_KEY` at a file with that server's public key. The tool prints a warning whenever either is in use. Plain `http://` is allowed only for `localhost`.
+Each unattributed report also carries a proof-of-work stamp, a SHA-256 partial preimage bound to that request's one-time nonce, so it can't be precomputed or reused. The default is 21 bits, about two million hashes. If the service raises the bar, the tool retries once at the level it names, and it refuses to go past 26 bits whatever it is told.
+
+Filing a report never returns a match result, whether you are signed in or not. Reporting is not a side channel into the watchlist.
+
+## Network exposure
+
+Without a proxy the service sees your IP address. For signed-in use that adds little, since it already knows the account. For unattributed reports, the service keeps a keyed hash of the address for the hourly limit and deletes it within a day. If you do not want it to see the address at all, route through Tor:
+
+```bash
+counterlure --tor report photo.jpg --name "Anna K."             # Tor SOCKS on 127.0.0.1:9050
+counterlure --proxy socks5h://127.0.0.1:1080 check photo.jpg
+export COUNTERLURE_PROXY=socks5h://127.0.0.1:9050               # set once
+```
+
+Hostnames go to the proxy unresolved, so no DNS query leaves your machine directly. Each `--tor` run uses its own circuit through Tor's SOCKS isolation, so the tool never shares an exit with your browser. The model download takes the same route. The whole network path is [lib/net.js](lib/net.js), about a hundred lines with no third-party dependencies. Cloudflare sometimes challenges Tor exits; if a request is refused, try again on a new circuit.
+
+## Reading a result
+
+* A match is a lead, not an identification. Faces resemble each other, and recognition degrades on small, blurred, off-angle or filtered images. Corroborate through other means before acting.
+* No match is not a clearance. Only faces that have been reported and corroborated can match.
+* Do not confront, harass or publish anyone on the strength of a result. If you have new information, file it.
+
+## Threat model
+
+Protected:
+
+* **Your photo**, on `check`. It never leaves the machine.
+* **Everything beyond the face**, on `report`. Background, bystanders, location and device metadata stay with you.
+* **Content in transit.** TLS ends at Cloudflare's edge. The OpenPGP layer inside it means the edge, proxies and exits see only fixed-size ciphertext.
+* **Integrity of answers.** A reply must be signed by the pinned key, encrypted to the one-time key generated for that request, and echo its nonce. Anything else is discarded.
+* **Replay.** The service accepts each nonce once, within five minutes of its clock.
+* **The origin.** The tool talks only to `www.counterlure.com` behind Cloudflare. No origin address is in this repository.
+
+Not protected:
+
+* **Who checked.** On `check` the service knows which member asked, though it keeps no record of what was asked.
+* **Your address**, unless you use Tor or a proxy.
+* **The face itself, on `report`.** A face crop is personal data about the person reported. It is held encrypted, used for matching, and destroyed on withdrawal. File only on people who actually approached you.
+* **A compromised endpoint.** If your machine is compromised, nothing here helps.
+
+## Verifying the server key
+
+`counterlure key` prints the pinned fingerprint. Compare it against at least two independent sources: the [CLI section of the website](https://www.counterlure.com/#cli), the key served at <https://www.counterlure.com/api/cli/key>, and the tagged release on GitHub. The tool checks the compiled-in key against the pinned fingerprint before every request.
+
+## Testing against your own server
+
+`COUNTERLURE_URL` points the tool at another server and `COUNTERLURE_SERVER_KEY` at a file holding its public key. The tool warns on every run while either is set. Plain `http://` is accepted only for `localhost`.
+
+```bash
+npm test
+```
 
 ## Licence
 
-The code is MIT licensed (see [LICENSE](LICENSE)). The models are not part of this repository. They are downloaded from OpenCV's model zoo: YuNet under the MIT licence, SFace under the Apache 2.0 licence.
+MIT (see [LICENSE](LICENSE)). The models are not distributed here. They are fetched from OpenCV's model zoo: YuNet under MIT, SFace under Apache 2.0.
