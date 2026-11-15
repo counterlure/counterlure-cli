@@ -157,6 +157,33 @@ Each unattributed report also carries a proof-of-work stamp, a SHA-256 partial p
 
 Filing a report never returns a match result, whether you are signed in or not. Reporting is not a side channel into the watchlist.
 
+### Abuse and moderation
+
+A service that accepts photos from strangers will be sent things it should never hold: floods of junk meant to run up costs or bury real reports, and pornography or child sexual abuse material sent on purpose to get the service taken down. Every report photo goes through the same screen on the server, whether it came from this tool or the website, before anything is stored.
+
+**What the screen refuses.**
+
+| Refused | What happens |
+|---|---|
+| Blank, tiny or featureless images | Refused by a local check before any paid classifier sees them. Floods of near-empty images cost almost nothing to turn away. |
+| No face, or more than one prominent face | Refused, with a message saying how to fix the photo. |
+| Sexual content or nudity | Refused. If the only photo you have is explicit, crop it to the face first. |
+| Graphic violence or gore | Refused. |
+| A person who appears to be under 18 | Refused. Counterlure only accepts reports about adults. |
+| A minor together with any sexual or suggestive content | Refused with a message that gives no reason, and the reporter is suspended at once. |
+
+**Nothing refused is kept.** A refused photo is never written to storage and no person ever looks at it. The server records the outcome, the classifier's label names and scores, and, for sexual, violent or abusive refusals, a SHA-256 hash of the file. The hash goes on a blocklist, so the same file sent again is refused straight away without being classified again.
+
+**Only the face is stored.** Even an accepted photo is not kept whole. The server cuts it down to the face plus a small margin, and that crop is the only image sealed and indexed. This tool already sends only a face crop, so in practice the server's cut changes little for CLI reports.
+
+**Repeat senders are cut off.** Refusals count as strikes against the reporter: the member, the website visitor, or the shared identity of all unattributed CLI reports. One child-abuse refusal, or a few sexual or violent ones in a month, suspends reporting from that source until an administrator reviews it. Many refusals of any kind in a day pause it until the next day. The service also has a daily ceiling on photo checks, so a flood cannot run up an unbounded bill. When the ceiling is reached, reports are turned away until the next day.
+
+**Fails closed.** If the content classifier is unavailable, reports are refused with a "try again later" error. They are never accepted unscreened.
+
+**Screening a photo is different.** `counterlure check` never sends an image, only a 128-number template computed on your machine, so there is nothing on that path to moderate. It has its own daily limit per member.
+
+Automated classifiers make mistakes in both directions. If a genuine photo of an adult is refused, crop it more tightly to the face and try again, or send a message to the team.
+
 ## Network: no address of yours reaches us
 
 By default the tool talks only to Counterlure's onion service:
