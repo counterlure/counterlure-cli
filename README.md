@@ -72,6 +72,15 @@ You can stop at any step. `counterlure signup` picks up where you left off; the 
 
 Unpaid signups are deleted after 30 days, and signups whose authenticator was never confirmed after an hour.
 
+### Why a lifetime account costs $5,000
+
+The launch offer is lower, but $5,000 is the real price. The price is part of the defence.
+
+- **Sybil resistance.** Adversaries will try to flood the registry with noise, to poison the face fingerprints or to fish for false positives. Requiring payment creates economic friction against automated sockpuppet spam.
+- **Adversarial resilience, technical and legal.** Counterlure is designed to burn active operatives, so we fully expect sustained pushback from sophisticated malicious actors, including state-sponsored ones. Defending this infrastructure takes continuous hardening against DDoS, infiltration and targeted exploits, and a dedicated legal war chest to fight off SLAPP suits, abusive takedown demands and jurisdictional pressure.
+
+We don't run ads, sell data or take VC money that could be pressured into shutting the registry down. Member-funded lifetime accounts directly bankroll the code defence and legal armour that keep the service alive. The same explanation is on the website: <https://www.counterlure.com/#why-price>.
+
 ## Screening a photo (members)
 
 ```bash
