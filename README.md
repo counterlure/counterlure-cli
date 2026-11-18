@@ -247,6 +247,17 @@ Not protected:
 npm test
 ```
 
+## Supporting the project
+
+The CLI is free and open source, and filing a report is free. If you want to help keep Counterlure
+running without opening an account, you can send a contribution through Fluidkey:
+<https://counterlure.fkey.id>
+
+Any amount helps. Fluidkey gives you a fresh address each time, so contributions don't sit together
+in one public wallet. A contribution doesn't buy membership or any feature, and it never affects
+how a report is reviewed. Check that the address is `counterlure.fkey.id` before you send: we never
+ask for funds anywhere else, and never by message.
+
 ## Licence
 
 Apache License 2.0 (see [LICENSE](LICENSE) and [NOTICE](NOTICE)). Versions up to 0.3.0 were released under MIT and stay under MIT.
