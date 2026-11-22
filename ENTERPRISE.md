@@ -1,31 +1,28 @@
-# Counterlure Enterprise Cluster Defense — Complete Organization Manual
+# Counterlure Enterprise — Organization Manual
 
-> **Audience:** CISOs, Insider Threat Leads, Corporate Security Teams, General Counsel, AppSec Reviewers, and Enrolled Staff.  
+> **Audience:** CISOs, Insider Threat Leads, Corporate Security Teams, AppSec Reviewers, and Enrolled Staff  
 > **Portal:** <https://www.counterlure.com/org> · **Apply:** <https://www.counterlure.com/enterprise>  
-> **License:** Open-source Apache-2.0 CLI (`counterlure-cli`)
+> **Client:** Open-source Apache-2.0 CLI (`counterlure-cli`)
 
 ---
 
-## 1. Executive Threat Brief: The Human-Layer Blindspot
+## 1. Threat Model: Off-Platform Human Targeting
 
-Modern enterprise security stacks (EDR, DLP, SIEM, email gateways, PAM) monitor **corporate devices and corporate networks**. They have zero visibility into the **personal human layer** where modern clandestine recruitment and industrial espionage actually begin:
+EDR, DLP, SIEM, and email gateways monitor corporate devices and corporate networks. They do not see who is approaching your engineers, researchers, and executives off-platform:
 
-- A researcher meets an engaging "investor" or "fellow academic" at an AI or semiconductor conference.
-- A cleared engineer receives a warm approach from a "specialist recruiter" on LinkedIn who moves the conversation to WhatsApp or Telegram.
-- An executive matches with a plausible, articulate persona on a dating app who gradually asks casual questions about roadmaps, travel, or colleagues.
+- A researcher meets a plausible "investor" or "academic" at an AI, defense, or semiconductor conference.
+- A cleared engineer receives a message from a "specialist recruiter" on LinkedIn who moves the conversation to WhatsApp or Telegram.
+- An executive matches with a well-researched persona on a dating app who slowly probes roadmaps, travel, or colleagues.
 
-Intelligence services and organized espionage groups rarely target one person in isolation. They run **cluster campaigns**: the same operative — using the same face, often under different cover names — approaches **multiple staff inside the same organization in parallel**.
+Organized recruitment and industrial espionage operations rarely target one person in isolation. The same operative works multiple staff inside the same organization in parallel using the same face under different cover names.
 
-### Why Traditional Hotlines Fail (The Silence Paradox)
-Employees almost never report suspicious personal contacts to HR or Corporate Security. They fear embarrassment, HR scrutiny, security-clearance review, or appearing foolish if the person turns out to be harmless. That silence lets an operative work down an org chart uncontested until proprietary work leaves the building.
-
-**Counterlure Enterprise breaks that silence by making employer surveillance mathematically impossible.**
+Traditional security hotlines miss these campaigns because employees rarely report personal approaches to HR or Security. They worry about embarrassment, internal scrutiny, or clearance review if the contact turns out to be harmless. Counterlure Enterprise closes that gap by making employer visibility into individual employee activity technically impossible.
 
 ---
 
-## 2. Cryptographic & Zero-Knowledge Architecture
+## 2. Cryptographic Architecture & Data Boundary
 
-Counterlure Enterprise operates on a **Dual-Tier Clustering** architecture backed by strict cryptographic guarantees:
+Counterlure Enterprise uses a **Dual-Tier Clustering** model:
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
@@ -36,8 +33,8 @@ Counterlure Enterprise operates on a **Dual-Tier Clustering** architecture backe
 │    employee's machine]                        │                         │
 │                                               ▼                         │
 │                       OpenPGP Encrypted to Pinned Server Key            │
-│                       + Fixed-Size Padding (no size side-channel)       │
-│                       + Routed over Tor Onion Service (no client IP)    │
+│                       + Fixed-Size Padding (4 KB blocks)                │
+│                       + Routed over Tor v3 Onion Service (no client IP) │
 └───────────────────────────────────────────────┬─────────────────────────┘
                                                 │
                                                 ▼
@@ -47,7 +44,7 @@ Counterlure Enterprise operates on a **Dual-Tier Clustering** architecture backe
 │   • Isolated strictly to your org_id (invisible to public & other orgs) │
 │   • Stores ONLY the 128-d face vector + anonymous random device_id      │
 │   • NO employee name, NO corporate email, NO photo, NO IP address       │
-│   • Single reports (1 or 2 staff) remain 100% private & invisible       │
+│   • Single reports (1 or 2 staff) remain private & invisible            │
 └──────────────────────────┬──────────────────────────────────────────────┘
                            │
          Only when 3+ DISTINCT anonymous devices report the same face
@@ -67,7 +64,7 @@ Counterlure Enterprise operates on a **Dual-Tier Clustering** architecture backe
 └───────────────────┘          └─────────────────────────┘     └────────────────────┘
 ```
 
-### Exact Data-Flow Matrix
+### Data-Flow Matrix
 
 | Data Type | Leaves Employee Machine? | Stored by Counterlure? | Visible to Employer (`/org`)? |
 |---|---|---|---|
@@ -83,42 +80,45 @@ Counterlure Enterprise operates on a **Dual-Tier Clustering** architecture backe
 
 ## 3. Security Admin Onboarding & Portal Guide (`/org`)
 
-### Step 1 — Corporate Application & Domain Verification
+> **No clickable auth links:** Counterlure never sends clickable verification or sign-in links by email. Corporate email checks and first-time portal logins use plain-text 6-digit codes, so corporate email gateways (Proofpoint, Mimecast, Defender Safe Links) cannot consume tokens or flag auth messages as link phishing.
+
+### Step 1 — Corporate Application & 6-Digit Email Verification
 1. Apply at <https://www.counterlure.com/enterprise> using an authorized **corporate email address** matching your organization's domain (consumer/free-mail domains are rejected).
-2. Click the verification link sent to your corporate inbox to prove domain ownership.
-3. Once approved and onboarded by Counterlure, you will receive an activation email with access to the **Organization Security Portal** at <https://www.counterlure.com/org>.
+2. Enter the **6-digit verification code** sent to your corporate inbox directly on the `/enterprise` page to confirm domain ownership.
+3. Once approved by Counterlure, you will receive an activation notice for the **Organization Security Portal** at <https://www.counterlure.com/org>.
 
 ### Step 2 — First Sign-In, Mandatory Authenticator (TOTP) & License Activation
-1. Visit <https://www.counterlure.com/org> and enter your verified corporate email.
-2. **First Login (Email Ownership Check):** Enter the one-time **6-digit verification code** sent to your corporate inbox (expires in 15 minutes).
-3. **Mandatory Authenticator Provisioning (TOTP):** Immediately after email verification, scan the QR code (or copy the manual Base32 setup key) with your authenticator app (1Password, Microsoft Authenticator, Google Authenticator, or Authy) and confirm with a 6-digit code. All future sign-ins use your authenticator app directly — no email OTP is sent again.
-4. **License Activation:** On first activation, follow the on-screen settlement instructions inside your authenticated `/org` portal to unlock your organization's Command Center and employee CLI enrollment code.
+1. Open <https://www.counterlure.com/org> and enter your verified corporate email.
+2. **First Login (Email OTP):** Enter the one-time **6-digit code** delivered to your corporate inbox (expires in 15 minutes).
+3. **Mandatory Authenticator Provisioning (TOTP):** Immediately after email verification, scan the locally generated QR code (or copy the manual Base32 setup key) into your authenticator app (1Password, Microsoft Authenticator, Google Authenticator, or Authy) and confirm with a 6-digit code.
+4. **All Subsequent Sign-Ins:** Entering your corporate email prompts directly for your **6-digit authenticator code** (no email OTP is sent again). Sessions use `HttpOnly`, `SameSite=Strict`, `Secure` cookies; 5 consecutive failed TOTP attempts trigger a 15-minute lockout and time-steps cannot be replayed.
+5. **License Activation:** On first activation, complete the on-screen settlement step inside `/org` to unlock your Command Center and employee CLI enrollment code.
 
-> **Lost Authenticator Access?** If you replace your device or lose access to your authenticator app, email `overwatch@counterlure.com` from your verified corporate email address to request an authenticator reset. Counterlure Support will clear your TOTP secret, end active sessions, and re-enable one-time email verification so you can provision a new authenticator app.
+> **Lost Authenticator Access?** Email `overwatch@counterlure.com` from your verified corporate address to request an authenticator reset. Counterlure Support will clear the TOTP secret, revoke active sessions, and re-enable one-time email verification so you can provision a new authenticator app.
 
-### Step 3 — Distributing the In-House CLI Enrollment Code
-Inside `/org`, the **In-House CLI Distribution** panel shows:
+### Step 3 — Distributing the Employee CLI Enrollment Code
+Inside `/org`, the **CLI Enrollment Code** panel provides:
 - **Active enrollment code** (e.g. `CLORG-XXXX-XXXX`)
-- **Copyable staff command** (`counterlure org enroll CLORG-XXXX-XXXX`)
-- **Enrolled anonymous device count** (aggregate total only — never tied to individuals)
-- **Rotate enrollment code** button
+- **Aggregate enrolled device count** (total only, never tied to individuals)
+- **Rotate code** button (invalidates the old code for *new* enrollments without disconnecting already-enrolled staff devices)
+- **Pre-filled Staff Memo** under the **Guides & Staff Rollout** tab
 
-> **Operational Best Practice:** Distribute the enrollment code over your internal wiki, intranet, Slack/Teams `#security-announcements`, or MDM software catalog. Rotating the enrollment code invalidates the old code for *new* enrollments while keeping all already-enrolled anonymous employee devices working without interruption.
+Distribute the enrollment code through your internal wiki, Slack/Teams security channel, or MDM software catalog.
 
-### Step 4 — Reading Threat Posture & Managing Alerts
-The `/org` portal displays a live **Threat Posture** banner:
+### Step 4 — Threat Posture & Alert Triage
+The `/org` Command Center displays your live threat posture:
 - **ALL CLEAR** (`none`): No face has reached the corroboration threshold.
 - **ELEVATED**: 1 active coordinated campaign (3 distinct staff).
 - **HIGH**: 2+ active campaigns, or 4+ distinct staff targeted by the same face.
 - **CRITICAL**: 3+ active campaigns, or 6+ distinct staff targeted by one face, or 10+ total targeted reports across active campaigns.
 
-Each promoted alert shows its reference (`ORG-XXXX`), distinct report count, first/last seen dates, and status (`promoted` → `acknowledged` → `resolved`).
+Each escalated alert displays its reference (`ORG-XXXX`), distinct report count, first/last seen dates, and status (`promoted` → `acknowledged` → `resolved`).
 
 ### Step 5 — Incident Response Playbook (When an Alert Fires)
-1. **Do NOT hunt for who filed the report.** Attempting to correlate network logs or endpoint telemetry destroys staff trust and defeats the program.
-2. **Wait for voluntary disclosures — and make it safe.** The moment an alert fires, Counterlure automatically sends a private message to every reporting employee's `counterlure org inbox` advising them to contact your security team voluntarily.
-3. **Publish a calm internal advisory** (optional for `HIGH`/`CRITICAL`): Remind staff that your organization has detected a coordinated external approach campaign and provide a confidential, no-blame channel to speak with Security.
-4. **Correlate with Counterlure**: Quote your `ORG-XXXX` reference when coordinating with Counterlure analysts for broader cross-industry context.
+1. **Do not try to identify who filed the report.** Attempting to correlate network logs or endpoint telemetry breaks staff trust and stops future reporting.
+2. **Wait for voluntary disclosures and make coming forward safe.** The moment an alert fires, Counterlure privately notifies every reporting employee via `counterlure org inbox` advising them to contact your security team.
+3. **Issue a calm internal advisory** (for `HIGH` or `CRITICAL`): Let staff know Security has detected a coordinated external approach campaign and provide a confidential, no-blame channel to speak with your team.
+4. **Coordinate with Counterlure:** Quote your `ORG-XXXX` reference when requesting cross-industry context from Counterlure analysts.
 
 ---
 
@@ -131,7 +131,7 @@ cd counterlure-cli
 npm ci
 npm link
 ```
-Ensure Tor is running locally (Tor Browser open, or `tor` service on port 9050/9150). To verify models in advance:
+Ensure Tor is running locally (Tor Browser open, or the `tor` service on port 9050/9150). To pre-download and SHA-256 verify the local face models:
 ```bash
 counterlure models
 ```
@@ -163,30 +163,30 @@ counterlure org withdraw CLO-XXXX-XXXX-XXXX-XXXX
 counterlure org leave
 ```
 
-> **Shortcut:** If your machine is enrolled in an organization and not signed in to a personal Counterlure account, `counterlure check PHOTO`, `counterlure inbox`, and `counterlure whoami` automatically route to your anonymous organization device.
+> **Shortcut:** When a machine is enrolled in an organization and not signed in to a personal Counterlure account, `counterlure check PHOTO`, `counterlure inbox`, and `counterlure whoami` automatically use the anonymous organization device.
 
 ---
 
-## 5. Copy-Pasteable Internal Rollout Memo (For CISOs / Security Teams)
+## 5. Internal Staff Rollout Memo Template
 
-> **Subject:** New Optional Privacy-First Tool to Screen Suspicious External Contacts
+> **Subject:** Optional Anonymous Tool to Screen Suspicious External Contacts (Counterlure CLI)
 >
 > Team,
 >
-> Like other leading technology and R&D organizations, our people are occasionally approached outside work — at conferences, on LinkedIn, messaging apps, or dating platforms — by sophisticated actors fishing for technical or strategic information.
+> Like other technology and R&D organizations, our staff are occasionally approached outside work — at conferences, on LinkedIn, messaging apps, or dating platforms — by actors probing for technical or strategic information.
 >
-> To help you protect yourself without ever having to share personal details with the company, we have enrolled in **Counterlure Enterprise**. It is an open-source command-line tool that lets you:
+> We have deployed **Counterlure Enterprise** so anyone can check or report a suspicious approach without sharing personal details with the company. It is an open-source CLI that lets you:
 >
-> 1. **Screen** a suspicious contact's photo against known global honeypots and active campaigns (`counterlure org check photo.jpg`).
-> 2. **Report** an uneasy approach completely anonymously (`counterlure org report photo.jpg`).
+> 1. **Screen** a suspicious contact's photo against known global cases and active campaigns (`counterlure org check photo.jpg`).
+> 2. **Report** an uneasy approach anonymously (`counterlure org report photo.jpg`).
 >
-> **Your privacy is guaranteed by math, not policy:**
-> - **No employee identity:** The tool never asks for your name, corporate email, or SSO login.
-> - **No photos leave your computer:** Only a 128-number mathematical face vector is sent, encrypted with OpenPGP over Tor.
-> - **No employer visibility into individual reports:** Security never sees single reports, photos, or who used the tool. We are only notified if **3 or more distinct colleagues** independently report the exact same face — at which point you also receive a private alert in `counterlure org inbox` so you can choose to reach out to Security.
+> **How your privacy is enforced in code:**
+> - **No employee identity:** The CLI never asks for your name, corporate email, or SSO login.
+> - **No photo uploads:** Photos stay on your machine. Only a 128-number mathematical face vector is transmitted, encrypted with OpenPGP over Tor.
+> - **No single-report visibility:** Security never sees single reports, photos, or who used the tool. Security is notified only if **3 or more distinct colleagues** independently report the same face — and you receive a private alert in `counterlure org inbox` so you can decide whether to contact Security.
 >
-> **Get started in 60 seconds:**
-> 1. Inspect or install the open-source CLI: <https://github.com/counterlure/counterlure-cli>
+> **Setup:**
+> 1. Review or install the open-source CLI: <https://github.com/counterlure/counterlure-cli>
 > 2. Enroll anonymously: `counterlure org enroll <INSERT_YOUR_CODE>`
 >
 > — *Your Security Team*
@@ -195,13 +195,13 @@ counterlure org leave
 
 ## 6. AppSec Code Audit Checklist
 
-Before approving `counterlure-cli` for internal deployment, your AppSec team can audit the entire client in under 20 minutes:
+Your AppSec team can audit the entire client in under 20 minutes before approving internal deployment:
 
 | File | What to verify |
 |---|---|
 | `bin/counterlure.js` | `orgReportCmd` and `orgCheckCmd` transmit **only** `face.embedding` (128 floats) — never raw image buffers, filenames, usernames, or environment variables. Local credential `org.json` is written `0600` and bound to the pinned server key fingerprint. |
 | `lib/faceprint.js` | Local YuNet + SFace ONNX inference; SHA-256 hashes of model weights are hardcoded and verified before loading. |
 | `lib/models.js` | Model downloads only follow redirects to GitHub and delete any file failing SHA-256 verification. |
-| `lib/proto.js` | End-to-end OpenPGP encryption to `SERVER_FINGERPRINT` (`lib/server-key.js`), single-use nonces, and fixed-size payload padding. |
+| `lib/proto.js` | End-to-end OpenPGP encryption to `SERVER_FINGERPRINT` (`lib/server-key.js`), single-use nonces, and 4 KB fixed-size payload padding. |
 | `lib/route.js` | Defaults strictly to Counterlure's Tor v3 `.onion` service; never silently falls back to clearnet. |
 | `test/*.test.js` | Run `npm test` locally to verify all 24 transport, padding, format, and Tor isolation tests. |
