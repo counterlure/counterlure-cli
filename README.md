@@ -34,6 +34,7 @@ Face detection (YuNet) and face templating (SFace) run locally on open models fr
 | `withdraw` | the receipt | anything else | nothing: the crop and template are destroyed |
 | `signup` | the username you pick, authenticator codes, the transaction ID of your payment | email, phone, name, card details | the username, the authenticator secret and the payment record (encrypted) |
 | `send` / `inbox` | your message / your session | anything else | the conversation, encrypted at rest |
+| `org enroll` / `org check` / `org report` | enrollment code or anonymous device token; 128-number SFace template only | employee name, email, photo, EXIF, IP | anonymous device token hash; embedding isolated to org namespace until 3+ distinct staff match |
 
 Every request is OpenPGP-encrypted to a server key compiled into the tool and padded to a fixed size: 16 KB for control traffic, 224 KB for every report regardless of the photo. Anyone on the path (a Tor relay, or on `--direct` Cloudflare's edge and your ISP) sees that a client talked to the service and when, but not what was asked or answered, and not whether a check was a hit.
 
@@ -181,6 +182,25 @@ A service that accepts photos from strangers will be sent things it should never
 **Fails closed.** If the content classifier is unavailable, reports are refused with a "try again later" error. They are never accepted unscreened.
 
 **Screening a photo is different.** `counterlure check` never sends an image, only a 128-number template computed on your machine, so there is nothing on that path to moderate. It has its own daily limit per member.
+
+## Organization / Enterprise mode (Cluster Defense)
+
+Organizations enrolled in [Counterlure Enterprise](https://www.counterlure.com/enterprise) distribute an internal enrollment code to their staff so engineers, researchers, and executives can screen and report suspicious contacts with **zero-knowledge employee anonymity**:
+
+```bash
+counterlure org enroll CLORG-XXXX-XXXX    # receive an anonymous per-device credential
+counterlure org check photo.jpg           # screen against org alerts + global Counterlure pool
+counterlure org report photo.jpg --context work-or-business
+counterlure org inbox                     # read private alerts (including org-under-attack notices)
+counterlure org status                    # aggregate org threat posture & unread alerts
+counterlure org withdraw CLO-...          # withdraw an organization report by receipt
+counterlure org leave                     # delete the local device credential
+```
+
+- **Zero employee PII**: No name, corporate email, or IP address is ever collected on employee devices.
+- **No photos leave your machine**: `org report` sends only the 128-number mathematical face template, stored strictly inside your organization's private namespace.
+- **Dual-tier escalation (threshold = 3)**: Single reports remain completely private. Only when **3 distinct anonymous devices** within your organization independently report the same face does the cluster promote to the global Counterlure pool, alert your security team (case reference and count only — no photos, names, or reporters), and send a private message to your `org inbox` advising you to step forward to your security team.
+
 
 Automated classifiers make mistakes in both directions. If a genuine photo of an adult is refused, crop it more tightly to the face and try again, or send a message to the team.
 

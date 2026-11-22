@@ -70,6 +70,19 @@ Faces
   models                   Download and verify the face models (SHA-256 pinned).
   key                      Print the pinned server key fingerprint and onion address.
 
+Organization (Enterprise Cluster Defense — zero-knowledge employee anonymity)
+  org enroll CODE          Enroll this device anonymously using your organization's code.
+                           No employee name, email or identity is ever recorded.
+  org check IMAGE [...]    Screen faces against both your organization's alerts and the global
+                           Counterlure pool. Photos never leave your machine.
+  org report IMAGE         File a zero-knowledge biometric report into your organization's private
+      [--context C]        namespace (128-d face vector only: no photo, no name, no identity).
+      [--face N] [--yes]   Escalates automatically when 3+ distinct staff report the same face.
+  org inbox [--all]        Read private alerts (including coordinated-attack notices).
+  org status               Show your organization's aggregate threat status and unread alerts.
+  org withdraw RECEIPT     Withdraw an organization report by its CLO-... receipt.
+  org leave                Delete the local anonymous device credential.
+
 Network
   (default)                Counterlure's onion service through the Tor running on this computer
                            (Tor Browser on 9150, or the tor service on 9050; COUNTERLURE_TOR=host:port
@@ -95,6 +108,7 @@ const dirs = {
 };
 dirs.session = path.join(dirs.config, 'session.json');
 dirs.signup = path.join(dirs.config, 'signup.json');
+dirs.org = path.join(dirs.config, 'org.json');
 dirs.models = process.env.COUNTERLURE_MODELS || path.join(dirs.config, 'models');
 
 // Saved sessions and signups are tied to the server key they came from (the key is the server's
@@ -127,6 +141,15 @@ const forgetSession = () => fs.rmSync(dirs.session, { force: true });
 const saveSignup = (s) => writePrivate(dirs.signup, s);
 const loadSignup = () => readUnexpired(dirs.signup);
 const forgetSignup = () => fs.rmSync(dirs.signup, { force: true });
+const saveOrg = (s) => writePrivate(dirs.org, s);
+function loadOrg() {
+  try {
+    const s = JSON.parse(fs.readFileSync(dirs.org, 'utf8'));
+    if (s?.orgToken && (s.key || SERVER_FINGERPRINT).toLowerCase() === trustedKey) return s;
+  } catch {}
+  return null;
+}
+const forgetOrg = () => fs.rmSync(dirs.org, { force: true });
 
 const when = (d) => new Date(d).toLocaleString();
 // How often to ask whether a payment has arrived (shorter only in tests).
@@ -185,6 +208,9 @@ function prompt(question, { hide = false } = {}) {
 const ask = async (q, opts) => (await prompt(q, opts) ?? '').trim();
 
 function level(m) {
+  if (m.source === 'org-campaign') {
+    return `${m.level === 'strong' ? 'STRONG MATCH' : 'possible match'} with ACTIVE CAMPAIGN TARGETING YOUR ORGANIZATION (${m.caseRef}, ${m.reporters} distinct staff reports) — please report this contact to your security team`;
+  }
   const what = m.source === 'burn-notice'
     ? `burn notice: ${m.name}${m.aliases?.length ? ` (also: ${m.aliases.join(', ')})` : ''}`
     : `a face reported by ${m.reporters} independent sources`;
@@ -620,6 +646,129 @@ async function compose(rest) {
   return lines.join('\n');
 }
 
+// ------------------------------------------------------------------ enterprise (zero-knowledge org CLI)
+
+async function orgCheckCmd(org, files, net, server, json) {
+  if (!files.length) throw new Error('Usage: counterlure org check IMAGE [IMAGE...]');
+  await models(net);
+  const results = [];
+  for (const file of files) {
+    const { faces } = await facesIn(file);
+    if (!faces.length) { results.push({ file, faces: [], note: 'no face found' }); continue; }
+    const r = await call(server, 'org_check', { orgToken: org.orgToken, model: MODEL_VERSION, faces: faces.map((f) => f.embedding) }, net);
+    results.push({ file, orgName: r.orgName, faces: faces.map((f, i) => ({ box: f.box, small: f.box.w < 64, matches: r.results?.[i] ?? [] })) });
+  }
+  if (json) return out(JSON.stringify(results, null, 2));
+  let any = false;
+  for (const r of results) {
+    out(`\n${r.file}  (checked against ${org.orgName} alerts + global pool)`);
+    if (!r.faces.length) { out('  No face found. Use a clearer, front-facing photo.'); continue; }
+    r.faces.forEach((f, i) => {
+      const where = `face ${i + 1} at ${f.box.x},${f.box.y} (${f.box.w}x${f.box.h}px)${f.small ? ', small: low confidence' : ''}`;
+      if (!f.matches.length) return out(`  ${where}: no match`);
+      any = true;
+      out(`  ${where}:`);
+      for (const m of f.matches) out(`    ${level(m)}`);
+    });
+  }
+  out(any
+    ? '\nIf this contact matches an active campaign targeting your organization, please alert your security team.'
+    : '\nNo match in global pool or active org alerts. To log this contact anonymously inside your org namespace: counterlure org report IMAGE');
+}
+
+async function orgReportCmd(org, file, o, net, route) {
+  if (!file) throw new Error('Usage: counterlure org report IMAGE [--context C] [--face N] [--yes]');
+  const context = o.context || 'other';
+  if (!CONTEXTS.includes(context)) throw new Error(`--context must be one of: ${CONTEXTS.join(', ')}`);
+  if (!o.yes && !process.stdin.isTTY) throw new Error('No terminal to confirm on. Re-run with --yes to confirm non-interactively.');
+
+  await models(net);
+  const { faces } = await facesIn(file);
+  if (!faces.length) throw new Error('No face found. Use a clearer, front-facing photo.');
+  const list = () => faces.map((f, i) => `  ${i + 1}: at ${f.box.x},${f.box.y} (${f.box.w}x${f.box.h}px)`).join('\n');
+  const n = o.face === undefined ? 1 : Number(o.face);
+  if (o.face === undefined && faces.length > 1) throw new Error(`${faces.length} faces in this photo. Pick one with --face N:\n${list()}`);
+  if (!Number.isInteger(n) || n < 1 || n > faces.length) throw new Error(`--face must be between 1 and ${faces.length}:\n${list()}`);
+  const face = faces[n - 1];
+
+  say([
+    '',
+    'Zero-Knowledge Organization Report',
+    `  Organization ${org.orgName}`,
+    `  Subject      face ${n} of ${faces.length} in ${path.basename(file)} (${face.box.w}x${face.box.h}px)`,
+    `  Context      ${context}`,
+    '  Leaves here  128-value mathematical face template ONLY (no photo, no name, no employee identity)',
+    `  Privacy      Isolated to ${org.orgName} until ${org.threshold || 3} distinct staff report the same face`,
+    `  Route        ${route.label}`,
+    '',
+    'Statement',
+    ...STATEMENT.map((l) => `  ${l}`),
+    '',
+  ].join('\n'));
+  if (!o.yes && (await ask('Type "yes" to make this statement and file the report: ')).toLowerCase() !== 'yes') throw new Error('Not filed.');
+
+  const r = await call(route.server, 'org_report', { orgToken: org.orgToken, model: MODEL_VERSION, face: face.embedding, context, attest: true }, net);
+  if (o.json) return out(JSON.stringify(r));
+  out(`\nFiled anonymously inside ${r.orgName}. Receipt: ${r.receipt}`);
+  out('No photo, name, or employee identity was sent. Check for private alerts anytime with: counterlure org inbox');
+}
+
+async function orgInboxCmd(org, o, net, server) {
+  const r = await call(server, 'org_inbox', { orgToken: org.orgToken, markRead: true }, net);
+  if (o.json) return out(JSON.stringify(r, null, 2));
+  if (!r.messages.length) return out(`No private alerts for your anonymous ${org.orgName} device.`);
+  const msgs = [...r.messages].reverse();
+  const shown = o.all ? msgs : msgs.slice(-10);
+  for (const m of shown) {
+    const fresh = !m.readAt ? '  [NEW]' : '';
+    out(`--- Counterlure (${org.orgName}), ${when(m.createdAt)}${fresh}`);
+    if (m.subject) out(`Subject: ${m.subject}`);
+    out(`${m.body}\n`);
+  }
+}
+
+async function orgStatusCmd(org, o, net, server) {
+  const r = await call(server, 'org_status', { orgToken: org.orgToken }, net);
+  if (o.json) return out(JSON.stringify(r, null, 2));
+  out(`Organization: ${r.orgName} (anonymous device enrolled)`);
+  out(`Threat status: ${r.underAttack ? `UNDER COORDINATED TARGETING (${String(r.severity).toUpperCase()}, ${r.activeCampaigns} active campaign${r.activeCampaigns === 1 ? '' : 's'})` : 'All clear (no active coordinated campaigns)'}`);
+  if (r.unread) out(`${r.unread} unread private alert${r.unread === 1 ? '' : 's'}. Run: counterlure org inbox`);
+}
+
+async function orgCmd(rest, o, server, net, route) {
+  const [sub, ...args] = rest;
+  if (!sub || sub === 'help') return process.stdout.write(HELP);
+  if (sub === 'enroll') {
+    const code = args[0] || await ask('Organization enrollment code: ');
+    if (!code) throw new Error('Usage: counterlure org enroll CODE');
+    const r = await call(server, 'org_enroll', { code }, net);
+    saveOrg({ server, orgToken: r.deviceToken, orgName: r.orgName, threshold: r.threshold });
+    if (o.json) return out(JSON.stringify({ enrolled: true, orgName: r.orgName, threshold: r.threshold }));
+    out(`Enrolled anonymously in ${r.orgName}.`);
+    out('Your device holds an anonymous random token — no employee name, email, or photo is ever shared with your employer.');
+    out('Next: counterlure org check PHOTO   or   counterlure org report PHOTO');
+    return;
+  }
+  if (sub === 'leave') {
+    forgetOrg();
+    out('Local anonymous organization credential deleted.');
+    return;
+  }
+  const org = loadOrg();
+  if (!org) throw new Error('Not enrolled in an organization. Run: counterlure org enroll CODE');
+  if (sub === 'status') return orgStatusCmd(org, o, net, server);
+  if (sub === 'check') return orgCheckCmd(org, args, net, server, o.json);
+  if (sub === 'report') return orgReportCmd(org, args[0], o, net, route);
+  if (sub === 'inbox') return orgInboxCmd(org, o, net, server);
+  if (sub === 'withdraw') {
+    if (args.length !== 1) throw new Error('Usage: counterlure org withdraw RECEIPT');
+    await call(server, 'org_withdraw', { orgToken: org.orgToken, receipt: args[0] }, net);
+    out('Withdrawn. Your organization report has been removed.');
+    return;
+  }
+  throw new Error(`Unknown org command "${sub}". Run: counterlure --help`);
+}
+
 // ------------------------------------------------------------------ main
 
 async function main() {
@@ -678,12 +827,21 @@ async function main() {
   }
   if (cmd === 'withdraw') {
     if (rest.length !== 1) throw new Error('Usage: counterlure withdraw RECEIPT');
+    if (String(rest[0]).toUpperCase().startsWith('CLO-')) {
+      const org = loadOrg();
+      if (!org) throw new Error('Not enrolled in an organization. Run: counterlure org enroll <code>');
+      await call(server, 'org_withdraw', { orgToken: org.orgToken, receipt: rest[0] }, net);
+      out('Withdrawn. Your organization report has been removed.');
+      return;
+    }
     await call(server, 'withdraw', { receipt: rest[0] }, net);
     out('Withdrawn. The stored face crop and template have been destroyed.');
     return;
   }
+  if (cmd === 'org') return orgCmd(rest, o, server, net, route);
 
   const s = loadSession();
+  const org = loadOrg();
   if (cmd === 'report') {
     if (rest.length !== 1) throw new Error('Usage: counterlure report IMAGE --name NAME [--context C] [--handle H]');
     return report(rest[0], o, s, net, route);
@@ -696,10 +854,15 @@ async function main() {
     out(sign && !s ? 'Signup abandoned. Its saved state was deleted here.' : 'Signed out. The saved session was deleted.');
     return;
   }
+  if (!s && org && (cmd === 'check' || cmd === 'inbox' || cmd === 'whoami')) {
+    if (cmd === 'check') return orgCheckCmd(org, rest, net, server, o.json);
+    if (cmd === 'inbox') return orgInboxCmd(org, o, net, server);
+    if (cmd === 'whoami') return orgStatusCmd(org, o, net, server);
+  }
   if (!s) {
     throw new Error(loadSignup()
       ? 'Your signup is not finished. Run: counterlure signup'
-      : 'Not signed in. Run: counterlure login   (no account yet? counterlure signup)');
+      : 'Not signed in. Run: counterlure login   (no account yet? counterlure signup, or counterlure org enroll CODE)');
   }
   if (cmd === 'whoami') {
     const r = await call(server, 'whoami', { token: s.token }, net);
