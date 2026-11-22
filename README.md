@@ -8,6 +8,7 @@ Counterlure looks for one face turning up under different names. Reports come in
 * **Screen** a photo against corroborated cases and burn notices without the photo leaving your machine. This needs an account.
 * **File** a report on a face. This needs no account at all.
 * **Write to the Counterlure team** and read their replies.
+* **Organization / Enterprise mode**: enroll anonymously with your organization's code (`counterlure org enroll`), screen against both org alerts and the global pool, and file zero-knowledge biometric reports that escalate only when 3+ distinct staff report the same face.
 
 By default all of it runs over Tor to Counterlure's onion service, so your network address never reaches us.
 
@@ -43,7 +44,7 @@ Every request is OpenPGP-encrypted to a server key compiled into the tool and pa
 Node.js 22 or later.
 
 ```bash
-git clone --branch v0.3.2 --depth 1 https://github.com/counterlure/counterlure-cli.git
+git clone --branch v0.4.0 --depth 1 https://github.com/counterlure/counterlure-cli.git
 cd counterlure-cli
 npm ci
 npm link
@@ -183,6 +184,8 @@ A service that accepts photos from strangers will be sent things it should never
 
 **Screening a photo is different.** `counterlure check` never sends an image, only a 128-number template computed on your machine, so there is nothing on that path to moderate. It has its own daily limit per member.
 
+Automated classifiers make mistakes in both directions. If a genuine photo of an adult is refused, crop it more tightly to the face and try again, or send a message to the team.
+
 ## Organization / Enterprise mode (Cluster Defense)
 
 Organizations enrolled in [Counterlure Enterprise](https://www.counterlure.com/enterprise) distribute an internal enrollment code to their staff so engineers, researchers, and executives can screen and report suspicious contacts with **zero-knowledge employee anonymity**:
@@ -200,9 +203,6 @@ counterlure org leave                     # delete the local device credential
 - **Zero employee PII**: No name, corporate email, or IP address is ever collected on employee devices.
 - **No photos leave your machine**: `org report` sends only the 128-number mathematical face template, stored strictly inside your organization's private namespace.
 - **Dual-tier escalation (threshold = 3)**: Single reports remain completely private. Only when **3 distinct anonymous devices** within your organization independently report the same face does the cluster promote to the global Counterlure pool, alert your security team (case reference and count only — no photos, names, or reporters), and send a private message to your `org inbox` advising you to step forward to your security team.
-
-
-Automated classifiers make mistakes in both directions. If a genuine photo of an adult is refused, crop it more tightly to the face and try again, or send a message to the team.
 
 ## Network: no address of yours reaches us
 
