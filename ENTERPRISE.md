@@ -88,9 +88,13 @@ Counterlure Enterprise operates on a **Dual-Tier Clustering** architecture backe
 2. Click the verification link sent to your corporate inbox to prove domain ownership.
 3. Once approved and onboarded by Counterlure, you will receive an activation email with access to the **Organization Security Portal** at <https://www.counterlure.com/org>.
 
-### Step 2 — Signing In to the Security Portal
-- Visit <https://www.counterlure.com/org> and enter your verified corporate email.
-- Enter the one-time **6-digit sign-in code** delivered to your corporate inbox (passwordless authentication; expires in 15 minutes; HttpOnly `SameSite=Strict` encrypted session).
+### Step 2 — First Sign-In, Mandatory Authenticator (TOTP) & License Activation
+1. Visit <https://www.counterlure.com/org> and enter your verified corporate email.
+2. **First Login (Email Ownership Check):** Enter the one-time **6-digit verification code** sent to your corporate inbox (expires in 15 minutes).
+3. **Mandatory Authenticator Provisioning (TOTP):** Immediately after email verification, scan the QR code (or copy the manual Base32 setup key) with your authenticator app (1Password, Microsoft Authenticator, Google Authenticator, or Authy) and confirm with a 6-digit code. All future sign-ins use your authenticator app directly — no email OTP is sent again.
+4. **License Activation:** On first activation, follow the on-screen settlement instructions inside your authenticated `/org` portal to unlock your organization's Command Center and employee CLI enrollment code.
+
+> **Lost Authenticator Access?** If you replace your device or lose access to your authenticator app, email `overwatch@counterlure.com` from your verified corporate email address to request an authenticator reset. Counterlure Support will clear your TOTP secret, end active sessions, and re-enable one-time email verification so you can provision a new authenticator app.
 
 ### Step 3 — Distributing the In-House CLI Enrollment Code
 Inside `/org`, the **In-House CLI Distribution** panel shows:
