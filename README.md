@@ -188,6 +188,8 @@ Automated classifiers make mistakes in both directions. If a genuine photo of an
 
 ## Organization / Enterprise mode (Cluster Defense)
 
+> **For Security Teams, CISOs, and AppSec Reviewers:** See the exhaustive **[Enterprise Cluster Defense Manual (ENTERPRISE.md)](ENTERPRISE.md)** for full cryptographic architecture, portal deployment instructions, incident response playbook, copy-pasteable staff rollout memo, and AppSec code audit checklist.
+
 Organizations enrolled in [Counterlure Enterprise](https://www.counterlure.com/enterprise) distribute an internal enrollment code to their staff so engineers, researchers, and executives can screen and report suspicious contacts with **zero-knowledge employee anonymity**:
 
 ```bash
