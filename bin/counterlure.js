@@ -237,31 +237,61 @@ async function callWithWork(server, op, args, net, extra = {}) {
 
 // Reads a photo and finds its faces. Only JPEG, PNG and WebP are decoded (lib/sharp.js).
 async function facesIn(file) {
-  const input = fs.readFileSync(file);
+  let input;
   try {
-    return { input, faces: await faceprints(input, { modelsDir: dirs.models }) };
+    input = fs.readFileSync(file);
+  } catch (e) {
+    throw new Error(`Could not read ${file}: ${e.code || e.message}`);
+  }
+  try {
+    const faces = await faceprints(input, { modelsDir: dirs.models });
+    return { input, faces, skipped: faces.skipped || 0 };
   } catch (e) {
     if (/unsupported image format/i.test(e.message)) throw new Error(`${file} is not a JPEG, PNG or WebP image.`);
     throw e;
   }
 }
 
+const isTooSmall = (box) => box.w < 64 || box.h < 64;
+
 async function check(s, files, net, server, json) {
   await models(net);
   const results = [];
   for (const file of files) {
-    const { faces } = await facesIn(file);
+    let found;
+    try {
+      found = await facesIn(file);
+    } catch (e) {
+      results.push({ file, faces: [], error: e.message });
+      continue;
+    }
+    const { faces, skipped } = found;
     if (!faces.length) { results.push({ file, faces: [], note: 'no face found' }); continue; }
-    const r = await call(server, 'check', { token: s.token, model: MODEL_VERSION, faces: faces.map((f) => f.embedding) }, net);
-    results.push({ file, checksLeft: r.checksLeft, faces: faces.map((f, i) => ({ box: f.box, small: f.box.w < 64, matches: r.results?.[i] ?? [] })) });
+    const usable = faces.filter((f) => !isTooSmall(f.box));
+    let r = { results: [] };
+    if (usable.length) {
+      r = await call(server, 'check', { token: s.token, model: MODEL_VERSION, faces: usable.map((f) => f.embedding) }, net);
+    }
+    let uIdx = 0;
+    results.push({
+      file,
+      ...(r.checksLeft !== undefined ? { checksLeft: r.checksLeft } : {}),
+      ...(skipped ? { skipped } : {}),
+      faces: faces.map((f) => (isTooSmall(f.box)
+        ? { box: f.box, refused: `face too small (${f.box.w}x${f.box.h}px, minimum 64x64px)`, matches: [] }
+        : { box: f.box, matches: r.results?.[uIdx++] ?? [] })),
+    });
   }
   if (json) return out(JSON.stringify(results, null, 2));
   let any = false;
   for (const r of results) {
     out(`\n${r.file}`);
+    if (r.error) { out(`  Error: ${r.error}`); continue; }
     if (!r.faces.length) { out('  No face found. Use a clearer, front-facing photo.'); continue; }
+    if (r.skipped) out(`  Note: ${r.skipped} additional face${r.skipped === 1 ? '' : 's'} skipped (at most 5 largest faces checked per photo).`);
     r.faces.forEach((f, i) => {
-      const where = `face ${i + 1} at ${f.box.x},${f.box.y} (${f.box.w}x${f.box.h}px)${f.small ? ', small: low confidence' : ''}`;
+      const where = `face ${i + 1} at ${f.box.x},${f.box.y} (${f.box.w}x${f.box.h}px)`;
+      if (f.refused) return out(`  ${where}: refused — ${f.refused}`);
       if (!f.matches.length) return out(`  ${where}: no match`);
       any = true;
       out(`  ${where}:`);
@@ -293,6 +323,7 @@ async function report(file, o, s, net, route) {
   if (o.face === undefined && faces.length > 1) throw new Error(`${faces.length} faces in this photo. Pick one with --face N:\n${list()}`);
   if (!Number.isInteger(n) || n < 1 || n > faces.length) throw new Error(`--face must be between 1 and ${faces.length}:\n${list()}`);
   const face = faces[n - 1];
+  if (isTooSmall(face.box)) throw new Error(`Face is too small (${face.box.w}x${face.box.h}px). Use a clearer photo where the face is at least 64x64px.`);
   const crop = await faceCrop(input, face.box, faces.filter((f) => f !== face).map((f) => f.box));
   if (o['save-crop']) fs.writeFileSync(o['save-crop'], crop.jpeg, { mode: 0o600 });
 
@@ -673,18 +704,40 @@ async function orgCheckCmd(org, files, net, server, json) {
   await models(net);
   const results = [];
   for (const file of files) {
-    const { faces } = await facesIn(file);
+    let found;
+    try {
+      found = await facesIn(file);
+    } catch (e) {
+      results.push({ file, faces: [], error: e.message });
+      continue;
+    }
+    const { faces, skipped } = found;
     if (!faces.length) { results.push({ file, faces: [], note: 'no face found' }); continue; }
-    const r = await orgCall(server, 'org_check', { orgToken: org.orgToken, model: MODEL_VERSION, faces: faces.map((f) => f.embedding) }, net, org.orgName);
-    results.push({ file, orgName: r.orgName, faces: faces.map((f, i) => ({ box: f.box, small: f.box.w < 64, matches: r.results?.[i] ?? [] })) });
+    const usable = faces.filter((f) => !isTooSmall(f.box));
+    let r = { results: [], orgName: org.orgName };
+    if (usable.length) {
+      r = await orgCall(server, 'org_check', { orgToken: org.orgToken, model: MODEL_VERSION, faces: usable.map((f) => f.embedding) }, net, org.orgName);
+    }
+    let uIdx = 0;
+    results.push({
+      file,
+      orgName: r.orgName || org.orgName,
+      ...(skipped ? { skipped } : {}),
+      faces: faces.map((f) => (isTooSmall(f.box)
+        ? { box: f.box, refused: `face too small (${f.box.w}x${f.box.h}px, minimum 64x64px)`, matches: [] }
+        : { box: f.box, matches: r.results?.[uIdx++] ?? [] })),
+    });
   }
   if (json) return out(JSON.stringify(results, null, 2));
   let any = false;
   for (const r of results) {
     out(`\n${r.file}  (checked against ${org.orgName} alerts + global pool)`);
+    if (r.error) { out(`  Error: ${r.error}`); continue; }
     if (!r.faces.length) { out('  No face found. Use a clearer, front-facing photo.'); continue; }
+    if (r.skipped) out(`  Note: ${r.skipped} additional face${r.skipped === 1 ? '' : 's'} skipped (at most 5 largest faces checked per photo).`);
     r.faces.forEach((f, i) => {
-      const where = `face ${i + 1} at ${f.box.x},${f.box.y} (${f.box.w}x${f.box.h}px)${f.small ? ', small: low confidence' : ''}`;
+      const where = `face ${i + 1} at ${f.box.x},${f.box.y} (${f.box.w}x${f.box.h}px)`;
+      if (f.refused) return out(`  ${where}: refused — ${f.refused}`);
       if (!f.matches.length) return out(`  ${where}: no match`);
       any = true;
       out(`  ${where}:`);
@@ -712,6 +765,7 @@ async function orgReportCmd(org, file, o, net, route) {
   if (o.face === undefined && faces.length > 1) throw new Error(`${faces.length} faces in this photo. Pick one with --face N:\n${list()}`);
   if (!Number.isInteger(n) || n < 1 || n > faces.length) throw new Error(`--face must be between 1 and ${faces.length}:\n${list()}`);
   const face = faces[n - 1];
+  if (isTooSmall(face.box)) throw new Error(`Face is too small (${face.box.w}x${face.box.h}px). Use a clearer photo where the face is at least 64x64px.`);
 
   say([
     '',

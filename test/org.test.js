@@ -210,3 +210,25 @@ test('C7: suspended organization and revoked device show distinct messages using
   assert.match(rRev.stderr, /Device enrollment revoked/);
   assert.doesNotMatch(rRev.stderr, /Not enrolled/);
 });
+
+test('C8: multi-file org check reports bad files while keeping other results, tracks skipped faces, and refuses <64px', async () => {
+  const modelsDir = path.resolve('c:/dev/counterlure/models');
+  if (fs.existsSync(path.join(modelsDir, 'face_detection_yunet_2023mar.onnx'))) {
+    const home = makeHome({ orgToken: 'org_c8token12345678901234567890', orgName: 'Acme Corp', threshold: 3 });
+    const blankPng = path.join(tmpDir, 'blank.png');
+    // Minimal valid 8x8 PNG via sharp
+    const { default: sharp } = await import('sharp');
+    await sharp({ create: { width: 8, height: 8, channels: 3, background: '#ffffff' } }).png().toFile(blankPng);
+    const badFile = path.join(tmpDir, 'nonexistent-bad.jpg');
+
+    const r = await runCli(['org', 'check', badFile, blankPng, '--json'], { home, env: { COUNTERLURE_MODELS: modelsDir } });
+    assert.equal(r.code, 0, r.stderr);
+    const parsed = JSON.parse(r.stdout);
+    assert.equal(parsed.length, 2);
+    assert.ok(parsed[0].error, 'bad file reported with error');
+    assert.equal(parsed[1].note, 'no face found', 'second file result kept');
+  }
+  const src = fs.readFileSync(BIN, 'utf8');
+  assert.match(src, /additional face.*skipped/);
+  assert.match(src, /minimum 64x64px/);
+});
