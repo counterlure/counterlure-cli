@@ -677,10 +677,12 @@ async function orgCheckCmd(org, files, net, server, json) {
 }
 
 async function orgReportCmd(org, file, o, net, route) {
-  if (!file) throw new Error('Usage: counterlure org report IMAGE [--context C] [--face N] [--yes]');
+  if (!file) throw new Error('Usage: counterlure org report IMAGE [--context C] [--face N] [--dry-run] [--yes]');
+  if (o.anon) throw new Error('--anon cannot be used with org report. Organization reports always use your anonymous device token; for a public unattributed report, use: counterlure report --anon IMAGE --name ...');
+  if (o['save-crop']) throw new Error('--save-crop is not supported for org report because no image crop is created or sent (only a 128-value face fingerprint).');
   const context = o.context || 'other';
   if (!CONTEXTS.includes(context)) throw new Error(`--context must be one of: ${CONTEXTS.join(', ')}`);
-  if (!o.yes && !process.stdin.isTTY) throw new Error('No terminal to confirm on. Re-run with --yes to confirm non-interactively.');
+  if (!o.yes && !o['dry-run'] && !process.stdin.isTTY) throw new Error('No terminal to confirm on. Re-run with --yes to confirm non-interactively.');
 
   await models(net);
   const { faces } = await facesIn(file);
@@ -705,6 +707,7 @@ async function orgReportCmd(org, file, o, net, route) {
     ...STATEMENT.map((l) => `  ${l}`),
     '',
   ].join('\n'));
+  if (o['dry-run']) return say('Dry run: nothing sent.');
   if (!o.yes && (await ask('Type "yes" to make this statement and file the report: ')).toLowerCase() !== 'yes') throw new Error('Not filed.');
 
   const r = await call(route.server, 'org_report', { orgToken: org.orgToken, model: MODEL_VERSION, face: face.embedding, context, attest: true }, net);

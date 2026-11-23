@@ -1,0 +1,97 @@
+// Enterprise CLI tests (C1-C10): runs bin/counterlure.js against an in-process OpenPGP mock server.
+import { test, before, after } from 'node:test';
+import assert from 'node:assert/strict';
+import http from 'node:http';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+import { fileURLToPath } from 'node:url';
+import * as openpgp from 'openpgp';
+
+const execFileAsync = promisify(execFile);
+const BIN = fileURLToPath(new URL('../bin/counterlure.js', import.meta.url));
+
+let tmpDir, keyFile, srvKey, srvFp, server, port, calls = [], handler;
+
+async function runCli(args, { home, stdin, env = {} } = {}) {
+  const childEnv = {
+    ...process.env,
+    COUNTERLURE_HOME: home,
+    COUNTERLURE_SERVER_KEY: keyFile,
+    ...env,
+  };
+  return new Promise((resolve) => {
+    const p = execFile(process.execPath, [BIN, '--server', `http://127.0.0.1:${port}`, ...args], { env: childEnv }, (err, stdout, stderr) => {
+      resolve({ code: err ? (err.code ?? 1) : 0, stdout, stderr });
+    });
+    if (stdin !== undefined) {
+      p.stdin.end(stdin);
+    } else {
+      p.stdin.end();
+    }
+  });
+}
+
+function makeHome(orgData = null) {
+  const dir = fs.mkdtempSync(path.join(tmpDir, 'home-'));
+  if (orgData) {
+    fs.writeFileSync(path.join(dir, 'org.json'), JSON.stringify({ key: srvFp, ...orgData }));
+  }
+  return dir;
+}
+
+before(async () => {
+  tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cl-cli-org-'));
+  const gen = await openpgp.generateKey({
+    type: 'ecc', curve: 'curve25519Legacy', userIDs: [{ name: 'test-server' }], format: 'object',
+  });
+  srvKey = gen.privateKey;
+  srvFp = srvKey.getFingerprint().toLowerCase();
+  keyFile = path.join(tmpDir, 'server.asc');
+  fs.writeFileSync(keyFile, gen.publicKey.armor());
+
+  server = http.createServer(async (req, res) => {
+    const chunks = [];
+    for await (const c of req) chunks.push(c);
+    const body = Buffer.concat(chunks).toString('utf8');
+    const { data } = await openpgp.decrypt({
+      message: await openpgp.readMessage({ armoredMessage: body }),
+      decryptionKeys: srvKey,
+    });
+    const msg = JSON.parse(data);
+    calls.push({ op: msg.op, args: msg.args });
+    const out = handler ? await handler(msg.op, msg.args) : { ok: true };
+    const reply = { protocol: msg.protocol, ts: Date.now(), echo: msg.nonce, ...out, pad: 'x'.repeat(2048) };
+    const replyKey = await openpgp.readKey({ armoredKey: msg.replyKey });
+    const signed = await openpgp.sign({
+      message: await openpgp.createMessage({ text: JSON.stringify(reply) }),
+      signingKeys: srvKey, format: 'object',
+    });
+    const armored = await openpgp.encrypt({ message: signed, encryptionKeys: replyKey });
+    res.writeHead(200, { 'content-type': 'application/pgp-encrypted' });
+    res.end(armored);
+  });
+  await new Promise((ok) => server.listen(0, '127.0.0.1', ok));
+  port = server.address().port;
+});
+
+after(async () => {
+  server?.close();
+  fs.rmSync(tmpDir, { recursive: true, force: true });
+});
+
+test('C1: org report refuses --anon and --save-crop instead of silently ignoring them', async () => {
+  calls = [];
+  const home = makeHome({ orgToken: 'org_testtoken12345678901234567890', orgName: 'Acme Corp', threshold: 3 });
+  const rAnon = await runCli(['org', 'report', 'photo.jpg', '--anon', '--yes'], { home });
+  assert.notEqual(rAnon.code, 0);
+  assert.match(rAnon.stderr, /--anon/);
+  assert.equal(calls.length, 0, 'nothing sent when --anon refused');
+
+  const rCrop = await runCli(['org', 'report', 'photo.jpg', '--save-crop', 'out.jpg', '--yes'], { home });
+  assert.notEqual(rCrop.code, 0);
+  assert.match(rCrop.stderr, /--save-crop/);
+  assert.equal(calls.length, 0, 'nothing sent when --save-crop refused');
+});
