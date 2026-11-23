@@ -783,7 +783,9 @@ async function orgCmd(rest, o, server, net, route) {
   if (sub === 'inbox') return orgInboxCmd(org, o, net, server);
   if (sub === 'withdraw') {
     if (args.length !== 1) throw new Error('Usage: counterlure org withdraw RECEIPT');
-    await call(server, 'org_withdraw', { orgToken: org.orgToken, receipt: args[0] }, net);
+    const r = await call(server, 'org_withdraw', { orgToken: org.orgToken, receipt: args[0] }, net);
+    if (o.json) return out(JSON.stringify({ withdrawn: Boolean(r.withdrawn) }));
+    if (!r.withdrawn) throw new Error('The server did not confirm withdrawal.');
     out('Withdrawn. Your organization report has been removed.');
     return;
   }
@@ -852,11 +854,15 @@ async function main() {
     if (String(rest[0]).toUpperCase().startsWith('CLO-')) {
       const org = loadOrg();
       if (!org) throw new Error('Not enrolled in an organization. Run: counterlure org enroll <code>');
-      await call(server, 'org_withdraw', { orgToken: org.orgToken, receipt: rest[0] }, net);
+      const r = await call(server, 'org_withdraw', { orgToken: org.orgToken, receipt: rest[0] }, net);
+      if (o.json) return out(JSON.stringify({ withdrawn: Boolean(r.withdrawn) }));
+      if (!r.withdrawn) throw new Error('The server did not confirm withdrawal.');
       out('Withdrawn. Your organization report has been removed.');
       return;
     }
-    await call(server, 'withdraw', { receipt: rest[0] }, net);
+    const r = await call(server, 'withdraw', { receipt: rest[0] }, net);
+    if (o.json) return out(JSON.stringify({ withdrawn: Boolean(r.withdrawn) }));
+    if (!r.withdrawn) throw new Error('The server did not confirm withdrawal.');
     out('Withdrawn. The stored face crop and template have been destroyed.');
     return;
   }

@@ -146,3 +146,24 @@ test('C3: org leave calls server org_leave before removing local file, and keeps
   assert.match(okRes.stdout, /2 reports withdrawn/);
   assert.equal(fs.existsSync(path.join(home, 'org.json')), false, 'org.json removed after server confirmed leave');
 });
+
+test('C4: org withdraw calls server and reports the true result (success or refusal)', async () => {
+  calls = [];
+  const home = makeHome({ orgToken: 'org_wdtoken12345678901234567890', orgName: 'Acme Corp', threshold: 3 });
+
+  handler = async () => ({ ok: false, error: 'No report of yours has that receipt.' });
+  const rFail = await runCli(['org', 'withdraw', 'CLO-1111-2222-3333-4444'], { home });
+  assert.notEqual(rFail.code, 0);
+  assert.match(rFail.stderr, /No report of yours has that receipt/);
+  assert.equal(calls[0].op, 'org_withdraw');
+
+  handler = async () => ({ ok: true, withdrawn: false });
+  const rFalse = await runCli(['org', 'withdraw', 'CLO-1111-2222-3333-4444'], { home });
+  assert.notEqual(rFalse.code, 0);
+  assert.match(rFalse.stderr, /did not confirm withdrawal/);
+
+  handler = async () => ({ ok: true, withdrawn: true });
+  const rOk = await runCli(['org', 'withdraw', 'CLO-1111-2222-3333-4444', '--json'], { home });
+  assert.equal(rOk.code, 0, rOk.stderr);
+  assert.deepEqual(JSON.parse(rOk.stdout), { withdrawn: true });
+});
