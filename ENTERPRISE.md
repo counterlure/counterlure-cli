@@ -22,6 +22,20 @@ Traditional security hotlines miss these campaigns because employees rarely repo
 
 ---
 
+### Why Staff Stay Silent (Research)
+
+Studies of employee security reporting keep finding the same barriers: people notice something wrong, then say nothing because reporting costs them more than silence.
+
+| Barrier | Source | Finding |
+|---|---|---|
+| Fear of blame and liability | Burda et al., Eindhoven University of Technology, 2025 | Even employees who want to protect colleagues hold back for fear of being blamed, and because they are unsure an approach is truly malicious. |
+| Not at their own expense | Carleton University, 2024 | Staff recognize concerning approaches but feel a strong pull to do nothing, out of fear of retaliation, social friction, and personal scrutiny. |
+| Distrust of internal confidentiality | International Journal of Critical Infrastructure Protection, 2018 | In critical-infrastructure organizations, low confidence that reports stay confidential, and fear of raising a false alarm, suppress formal reporting. |
+| Shame and peer disapproval | University of Sussex & University of Auckland, 2020 | Shame and fear of colleagues' judgment deter employees from admitting they engaged with a lure once doubts set in. |
+| Privacy and handling friction | RAID '24 | Uncertainty over how reports are handled, and reluctance to expose personal message threads, reduce reporting. |
+
+**What Counterlure changes:** staff screen and report through an independent, external tool. Their employer never learns who reported, never sees a photo or a message thread, and hears nothing until at least three people independently report the same face. Reporting stops being a personal risk, and Security gets a corroborated signal without surveilling anyone.
+
 ## 2. Cryptographic Architecture & Data Boundary
 
 Counterlure Enterprise uses a **Dual-Tier Clustering** model:
@@ -80,6 +94,28 @@ Counterlure Enterprise uses a **Dual-Tier Clustering** model:
 
 ---
 
+## Why There Is No Sales Team
+
+Counterlure runs unattended, the enterprise tier included: no sales calls, demos, account managers, or named staff. This is a security decision, not a missing department.
+
+* **Operating this tool makes us a target.** Counterlure exposes coordinated recruitment and honeypot campaigns, and the people behind those campaigns have every reason to identify, pressure, or compromise whoever runs the register. A sales team is a list of names, faces, phone numbers, and calendars, which is the attack surface this product exists to shrink.
+* **Opsec starts with staying anonymous.** Nobody behind Counterlure is identified publicly, and nobody will ask to meet you. Payment is made on public blockchains rather than by card or bank transfer for the same reason: no card processor or bank account ties the register to a person. Blockchain transfers are public and traceable, so this protects the operators' identities; it does not make your payment private.
+* **What you get instead.** Every step is self-serve: apply and verify your domain at <https://www.counterlure.com/enterprise>, then pay, enroll staff, and triage alerts in the portal at <https://www.counterlure.com/org>. A receipt is emailed when the license is paid. Questions go to `overwatch@counterlure.com`. Rather than trusting a salesperson, have your AppSec team audit this Apache-2.0 client (section 6).
+
+## Licensing
+
+Licenses are one-time and lifetime, sized by seats. A seat is one enrolled staff device or one unused enrollment code; revoking a device or cancelling a code frees its seat.
+
+| Size | Seats | Price | Lifetime per seat | Introductory offer (paid by December 31, 2026) | Offer per seat |
+|---|---|---|---|---|---|
+| Small enterprise | up to 25 | $50,000 | $2,000 | $25,000 | $1,000 |
+| SME | up to 200 | $250,000 | $1,250 | $125,000 | $625 |
+| Large organization | up to 5,000 | $500,000 | $100 | $250,000 | $50 |
+
+Per-seat figures assume every seat in the license is used.
+
+Moving to a bigger size later costs only the difference, at the prices of the day. Choose a size and pay inside the portal.
+
 ## 3. Security Admin Onboarding & Portal Guide (`/org`)
 
 > **No clickable auth links:** Counterlure never sends clickable verification or sign-in links by email. Corporate email checks and first-time portal logins use plain-text 6-digit codes, so corporate email gateways (Proofpoint, Mimecast, Defender Safe Links) cannot consume tokens or flag auth messages as link phishing.
@@ -94,7 +130,7 @@ Counterlure Enterprise uses a **Dual-Tier Clustering** model:
 2. **First Login (Email OTP):** Enter the one-time **6-digit code** delivered to your corporate inbox (expires in 15 minutes).
 3. **Mandatory Authenticator Provisioning (TOTP):** Immediately after email verification, scan the locally generated QR code (or copy the manual Base32 setup key) into your authenticator app (1Password, Microsoft Authenticator, Google Authenticator, or Authy) and confirm with a 6-digit code.
 4. **All Subsequent Sign-Ins:** Entering your corporate email prompts directly for your **6-digit authenticator code** (no email OTP is sent again). Sessions use `HttpOnly`, `SameSite=Strict`, `Secure` cookies; 5 consecutive failed TOTP attempts trigger a 15-minute lockout and time-steps cannot be replayed.
-5. **License Activation:** On first activation, complete the on-screen settlement step inside `/org` to unlock your Command Center and single-use employee CLI enrollment codes.
+5. **License Activation:** On first activation, choose a license size and complete the on-screen payment step inside `/org` to unlock your Command Center and single-use employee CLI enrollment codes. To add seats later, use **Get more seats** in the portal.
 
 > **Lost Authenticator Access?** Email `overwatch@counterlure.com` from your verified corporate address to request an authenticator reset. Counterlure Support will clear the TOTP secret, revoke active sessions, and re-enable one-time email verification so you can provision a new authenticator app.
 

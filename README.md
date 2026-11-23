@@ -206,6 +206,24 @@ counterlure org leave                     # delete the local device credential
 - **No photos leave your machine**: `org report` sends only the 128-number mathematical face template, stored strictly inside your organization's private namespace.
 - **Dual-tier escalation (threshold = 3)**: Single reports remain completely private. Only when **3 distinct anonymous devices** within your organization independently report the same face does the cluster promote to the global Counterlure pool, alert your security team (case reference and count only — no photos, names, or reporters), and send a private message to your `org inbox` advising you to step forward to your security team.
 
+### Why staff need an outside channel
+
+Studies of employee security reporting find that staff notice suspicious approaches and still say nothing, because reporting costs them more than silence:
+
+- **Fear of blame and liability** (Burda et al., Eindhoven University of Technology, 2025): employees hold back for fear of being blamed, and because they are unsure an approach is truly malicious.
+- **Not at their own expense** (Carleton University, 2024): staff feel a strong pull to do nothing, out of fear of retaliation, social friction, and personal scrutiny.
+- **Distrust of internal confidentiality** (International Journal of Critical Infrastructure Protection, 2018): low confidence that reports stay confidential, and fear of a false alarm, suppress formal reporting.
+- **Shame and peer disapproval** (University of Sussex & University of Auckland, 2020): shame and fear of colleagues' judgment deter admitting engagement with a lure.
+- **Privacy and handling friction** (RAID '24): uncertainty over how reports are handled, and reluctance to expose personal message threads, reduce reporting.
+
+Counterlure is an independent, external tool: the employer never learns who reported, never sees a photo or a message thread, and hears nothing until at least three people independently report the same face.
+
+### Licensing and why there is no sales team
+
+Licenses are one-time and lifetime, sized by seats (one enrolled device or one unused enrollment code): Small enterprise, up to 25 seats, $50,000 ($2,000 per seat); SME, up to 200 seats, $250,000 ($1,250 per seat); Large organization, up to 5,000 seats, $500,000 ($100 per seat). 50% off every license paid by December 31, 2026. Moving up later costs the difference.
+
+Counterlure runs unattended, enterprise included: no sales calls, demos, account managers, or named staff. Operating a tool that exposes recruitment and honeypot campaigns makes its operators a target, so opsec comes first, and it starts with staying anonymous. Payment on public blockchains serves the same end: no card processor or bank account ties the register to a person. Blockchain transfers are public and traceable; this protects the operators' identities, not the privacy of a payment. Details in [ENTERPRISE.md](ENTERPRISE.md).
+
 ## Network: no address of yours reaches us
 
 By default the tool talks only to Counterlure's onion service:
