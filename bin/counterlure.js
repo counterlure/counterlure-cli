@@ -306,6 +306,13 @@ async function check(s, files, net, server, json) {
 
 async function report(file, o, s, net, route) {
   // Validate everything local before spending CPU on models and proof of work.
+  const org = loadOrg();
+  if (org) {
+    say(`warning: This device is enrolled in ${org.orgName}. "counterlure report" submits a cropped face photo to the PUBLIC Counterlure intake, not your organization's private namespace. Use "counterlure org report IMAGE" for private organization reporting.`);
+    if (!o.yes && !o['dry-run'] && !process.stdin.isTTY) {
+      throw new Error(`This device is enrolled in ${org.orgName} and "counterlure report" goes to the public intake. Re-run with --yes to confirm, or use: counterlure org report IMAGE`);
+    }
+  }
   const asMember = Boolean(s) && !o.anon;
   const name = (o.name ?? (process.stdin.isTTY ? await ask('Name they gave you: ') : '')).trim();
   if (name.length < 2 || name.length > 120) throw new Error('--name is required: the name they gave you (2 to 120 characters).');
@@ -343,7 +350,10 @@ async function report(file, o, s, net, route) {
     '',
   ].join('\n'));
   if (o['dry-run']) return say(`Dry run: nothing sent.${o['save-crop'] ? ` Crop written to ${o['save-crop']}.` : ''}`);
-  if (!o.yes && (await ask('Type "yes" to make this statement and file the report: ')).toLowerCase() !== 'yes') throw new Error('Not filed.');
+  const confirmPrompt = org
+    ? 'Type "yes" to confirm sending to the PUBLIC Counterlure intake and make this statement: '
+    : 'Type "yes" to make this statement and file the report: ';
+  if (!o.yes && (await ask(confirmPrompt)).toLowerCase() !== 'yes') throw new Error('Not filed.');
 
   const args = { name, context, handle, photo: crop.jpeg.toString('base64'), attest: true };
   let r;

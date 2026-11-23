@@ -238,3 +238,13 @@ test('C9: org check deduplicates organization campaign matches so own face is ne
   assert.match(src, /function dedupeOrgMatches/);
   assert.match(src, /dedupeOrgMatches\(r\.results/);
 });
+
+test('C10: enrolled employee running public counterlure report gets a public-intake warning and requires confirmation or --yes', async () => {
+  calls = [];
+  const home = makeHome({ orgToken: 'org_c10token1234567890123456789', orgName: 'Acme Corp', threshold: 3 });
+  const r = await runCli(['report', 'photo.jpg', '--name', 'Alex Smith'], { home });
+  assert.notEqual(r.code, 0);
+  assert.match(r.stderr, /PUBLIC Counterlure intake/i);
+  assert.match(r.stderr, /--yes/);
+  assert.equal(calls.length, 0, 'nothing sent without confirmation');
+});
