@@ -167,3 +167,9 @@ test('C4: org withdraw calls server and reports the true result (success or refu
   assert.equal(rOk.code, 0, rOk.stderr);
   assert.deepEqual(JSON.parse(rOk.stdout), { withdrawn: true });
 });
+
+test('C5: pre-send text lists every field sent by org_report instead of claiming template ONLY', () => {
+  const src = fs.readFileSync(BIN, 'utf8');
+  assert.doesNotMatch(src, /128-value mathematical face template ONLY/);
+  assert.match(src, /128-value face fingerprint, model version.*context.*attestation.*device token/);
+});

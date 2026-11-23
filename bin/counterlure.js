@@ -695,12 +695,12 @@ async function orgReportCmd(org, file, o, net, route) {
 
   say([
     '',
-    'Zero-Knowledge Organization Report',
+    'Organization Report',
     `  Organization ${org.orgName}`,
     `  Subject      face ${n} of ${faces.length} in ${path.basename(file)} (${face.box.w}x${face.box.h}px)`,
     `  Context      ${context}`,
-    '  Leaves here  128-value mathematical face template ONLY (no photo, no name, no employee identity)',
-    `  Privacy      Isolated to ${org.orgName} until ${org.threshold || 3} distinct staff report the same face`,
+    `  Leaves here  128-value face fingerprint, model version (${MODEL_VERSION}), context (${context}), reporting attestation, and your anonymous device token (no photo, no name, no employee identity)`,
+    `  Privacy      Isolated to ${org.orgName} until ${org.threshold || 3} distinct staff report the same face; a Counterlure reviewer decides whether an escalated case joins the wider pool`,
     `  Route        ${route.label}`,
     '',
     'Statement',
