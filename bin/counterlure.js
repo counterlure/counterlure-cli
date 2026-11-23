@@ -757,8 +757,22 @@ async function orgCmd(rest, o, server, net, route) {
     return;
   }
   if (sub === 'leave') {
+    const org = loadOrg();
+    if (!org) throw new Error('Not enrolled in an organization.');
+    let r;
+    try {
+      r = await call(server, 'org_leave', { orgToken: org.orgToken, withdraw: Boolean(o.withdraw) }, net);
+    } catch (e) {
+      if (e instanceof Refused && e.reply?.code === 'org_not_enrolled') {
+        forgetOrg();
+        out('This device was no longer enrolled on the server. Local organization credential deleted.');
+        return;
+      }
+      throw new Error(`Could not reach the server to leave ${org.orgName} (${e.message}). Local enrollment file was kept so you can retry.`);
+    }
     forgetOrg();
-    out('Local anonymous organization credential deleted.');
+    const extra = r?.withdrawn ? ` ${r.withdrawn} report${r.withdrawn === 1 ? '' : 's'} withdrawn.` : '';
+    out(`Left ${org.orgName} and deleted local anonymous organization credential.${extra}`);
     return;
   }
   const org = loadOrg();

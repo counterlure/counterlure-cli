@@ -117,3 +117,32 @@ test('C2: org enroll stops when already enrolled unless --replace is given', asy
   assert.equal(saved.orgName, 'Beta Corp');
   assert.equal(saved.orgToken, 'org_newtoken12345678901234567890');
 });
+
+test('C3: org leave calls server org_leave before removing local file, and keeps file if server is unreachable', async () => {
+  calls = [];
+  handler = async (op, args) => {
+    if (op === 'org_leave') return { ok: true, left: true, withdrawn: args.withdraw ? 2 : 0 };
+    return { ok: true };
+  };
+  const home = makeHome({ orgToken: 'org_leavetoken123456789012345678', orgName: 'Acme Corp', threshold: 3 });
+
+  // Unreachable server: local file must be kept
+  const badRes = await new Promise((resolve) => {
+    const p = execFile(process.execPath, [BIN, '--server', 'http://127.0.0.1:1', 'org', 'leave'], {
+      env: { ...process.env, COUNTERLURE_HOME: home, COUNTERLURE_SERVER_KEY: keyFile },
+    }, (err, stdout, stderr) => resolve({ code: err ? (err.code ?? 1) : 0, stdout, stderr }));
+    p.stdin.end();
+  });
+  assert.notEqual(badRes.code, 0);
+  assert.match(badRes.stderr, /Local enrollment file was kept/i);
+  assert.ok(fs.existsSync(path.join(home, 'org.json')), 'org.json kept when server unreachable');
+
+  // Reachable server: calls org_leave then deletes local file
+  const okRes = await runCli(['org', 'leave', '--withdraw'], { home });
+  assert.equal(okRes.code, 0, okRes.stderr);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].op, 'org_leave');
+  assert.equal(calls[0].args.withdraw, true);
+  assert.match(okRes.stdout, /2 reports withdrawn/);
+  assert.equal(fs.existsSync(path.join(home, 'org.json')), false, 'org.json removed after server confirmed leave');
+});
