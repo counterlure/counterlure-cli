@@ -279,7 +279,7 @@ async function check(s, files, net, server, json) {
       ...(skipped ? { skipped } : {}),
       faces: faces.map((f) => (isTooSmall(f.box)
         ? { box: f.box, refused: `face too small (${f.box.w}x${f.box.h}px, minimum 64x64px)`, matches: [] }
-        : { box: f.box, matches: r.results?.[uIdx++] ?? [] })),
+        : { box: f.box, matches: dedupeOrgMatches(r.results?.[uIdx++] ?? []) })),
     });
   }
   if (json) return out(JSON.stringify(results, null, 2));
@@ -699,6 +699,25 @@ async function orgCall(server, op, args, net, orgName) {
   }
 }
 
+function dedupeOrgMatches(matches) {
+  const out = [];
+  const seenRefs = new Set();
+  const hasOrgCampaign = (matches || []).some((m) => m.source === 'org-campaign');
+  for (const m of matches || []) {
+    if (m.source === 'org-campaign') {
+      const ref = m.caseRef || JSON.stringify(m);
+      if (seenRefs.has(ref)) continue;
+      seenRefs.add(ref);
+      out.push(m);
+      continue;
+    }
+    // If an org's own promoted case was also published to the global pool, avoid listing it twice.
+    if (hasOrgCampaign && m.source === 'reports' && m.caseRef && seenRefs.has(m.caseRef)) continue;
+    out.push(m);
+  }
+  return out;
+}
+
 async function orgCheckCmd(org, files, net, server, json) {
   if (!files.length) throw new Error('Usage: counterlure org check IMAGE [IMAGE...]');
   await models(net);
@@ -725,7 +744,7 @@ async function orgCheckCmd(org, files, net, server, json) {
       ...(skipped ? { skipped } : {}),
       faces: faces.map((f) => (isTooSmall(f.box)
         ? { box: f.box, refused: `face too small (${f.box.w}x${f.box.h}px, minimum 64x64px)`, matches: [] }
-        : { box: f.box, matches: r.results?.[uIdx++] ?? [] })),
+        : { box: f.box, matches: dedupeOrgMatches(r.results?.[uIdx++] ?? []) })),
     });
   }
   if (json) return out(JSON.stringify(results, null, 2));

@@ -232,3 +232,9 @@ test('C8: multi-file org check reports bad files while keeping other results, tr
   assert.match(src, /additional face.*skipped/);
   assert.match(src, /minimum 64x64px/);
 });
+
+test('C9: org check deduplicates organization campaign matches so own face is never listed twice', () => {
+  const src = fs.readFileSync(BIN, 'utf8');
+  assert.match(src, /function dedupeOrgMatches/);
+  assert.match(src, /dedupeOrgMatches\(r\.results/);
+});
