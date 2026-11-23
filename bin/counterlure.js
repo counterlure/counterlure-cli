@@ -646,7 +646,27 @@ async function compose(rest) {
   return lines.join('\n');
 }
 
-// ------------------------------------------------------------------ enterprise (zero-knowledge org CLI)
+// ------------------------------------------------------------------ enterprise (org CLI)
+
+async function orgCall(server, op, args, net, orgName) {
+  try {
+    return await call(server, op, args, net);
+  } catch (e) {
+    if (e instanceof Refused) {
+      const code = e.reply?.code;
+      if (code === 'org_suspended') {
+        throw new Error(`Organization suspended: ${e.message}`);
+      }
+      if (code === 'org_unpaid') {
+        throw new Error(`Organization license inactive: ${e.message}`);
+      }
+      if (code === 'org_revoked' || (code === 'org_not_enrolled' && args?.orgToken)) {
+        throw new Error(`Device enrollment revoked or no longer active${orgName ? ` for ${orgName}` : ''}. Ask your security team for a new one-time code and run: counterlure org enroll CODE --replace`);
+      }
+    }
+    throw e;
+  }
+}
 
 async function orgCheckCmd(org, files, net, server, json) {
   if (!files.length) throw new Error('Usage: counterlure org check IMAGE [IMAGE...]');
@@ -655,7 +675,7 @@ async function orgCheckCmd(org, files, net, server, json) {
   for (const file of files) {
     const { faces } = await facesIn(file);
     if (!faces.length) { results.push({ file, faces: [], note: 'no face found' }); continue; }
-    const r = await call(server, 'org_check', { orgToken: org.orgToken, model: MODEL_VERSION, faces: faces.map((f) => f.embedding) }, net);
+    const r = await orgCall(server, 'org_check', { orgToken: org.orgToken, model: MODEL_VERSION, faces: faces.map((f) => f.embedding) }, net, org.orgName);
     results.push({ file, orgName: r.orgName, faces: faces.map((f, i) => ({ box: f.box, small: f.box.w < 64, matches: r.results?.[i] ?? [] })) });
   }
   if (json) return out(JSON.stringify(results, null, 2));
@@ -710,14 +730,14 @@ async function orgReportCmd(org, file, o, net, route) {
   if (o['dry-run']) return say('Dry run: nothing sent.');
   if (!o.yes && (await ask('Type "yes" to make this statement and file the report: ')).toLowerCase() !== 'yes') throw new Error('Not filed.');
 
-  const r = await call(route.server, 'org_report', { orgToken: org.orgToken, model: MODEL_VERSION, face: face.embedding, context, attest: true }, net);
+  const r = await orgCall(route.server, 'org_report', { orgToken: org.orgToken, model: MODEL_VERSION, face: face.embedding, context, attest: true }, net, org.orgName);
   if (o.json) return out(JSON.stringify({ receipt: r.receipt, orgName: r.orgName }));
   out(`\nFiled anonymously inside ${r.orgName}. Receipt: ${r.receipt}`);
   out('No photo, name, or employee identity was sent. Check for private alerts anytime with: counterlure org inbox');
 }
 
 async function orgInboxCmd(org, o, net, server) {
-  const r = await call(server, 'org_inbox', { orgToken: org.orgToken, markRead: true }, net);
+  const r = await orgCall(server, 'org_inbox', { orgToken: org.orgToken, markRead: true }, net, org.orgName);
   if (o.json) return out(JSON.stringify({ messages: r.messages || [], unread: r.unread ?? 0 }, null, 2));
   if (!r.messages.length) return out(`No private alerts for your anonymous ${org.orgName} device.`);
   const msgs = [...r.messages].reverse();
@@ -731,7 +751,7 @@ async function orgInboxCmd(org, o, net, server) {
 }
 
 async function orgStatusCmd(org, o, net, server) {
-  const r = await call(server, 'org_status', { orgToken: org.orgToken }, net);
+  const r = await orgCall(server, 'org_status', { orgToken: org.orgToken }, net, org.orgName);
   if (o.json) {
     const payload = {
       orgName: r.orgName,
@@ -793,7 +813,7 @@ async function orgCmd(rest, o, server, net, route) {
   if (sub === 'inbox') return orgInboxCmd(org, o, net, server);
   if (sub === 'withdraw') {
     if (args.length !== 1) throw new Error('Usage: counterlure org withdraw RECEIPT');
-    const r = await call(server, 'org_withdraw', { orgToken: org.orgToken, receipt: args[0] }, net);
+    const r = await orgCall(server, 'org_withdraw', { orgToken: org.orgToken, receipt: args[0] }, net, org.orgName);
     if (o.json) return out(JSON.stringify({ withdrawn: Boolean(r.withdrawn) }));
     if (!r.withdrawn) throw new Error('The server did not confirm withdrawal.');
     out('Withdrawn. Your organization report has been removed.');
@@ -864,7 +884,7 @@ async function main() {
     if (String(rest[0]).toUpperCase().startsWith('CLO-')) {
       const org = loadOrg();
       if (!org) throw new Error('Not enrolled in an organization. Run: counterlure org enroll <code>');
-      const r = await call(server, 'org_withdraw', { orgToken: org.orgToken, receipt: rest[0] }, net);
+      const r = await orgCall(server, 'org_withdraw', { orgToken: org.orgToken, receipt: rest[0] }, net, org.orgName);
       if (o.json) return out(JSON.stringify({ withdrawn: Boolean(r.withdrawn) }));
       if (!r.withdrawn) throw new Error('The server did not confirm withdrawal.');
       out('Withdrawn. Your organization report has been removed.');

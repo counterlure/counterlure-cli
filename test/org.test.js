@@ -194,3 +194,19 @@ test('C6: org inbox --json and org status --json omit protocol padding and envel
   assert.deepEqual(Object.keys(stJson).sort(), ['activeCampaigns', 'countsFrom', 'orgName', 'severity', 'underAttack', 'unread']);
   assert.equal(stJson.pad, undefined);
 });
+
+test('C7: suspended organization and revoked device show distinct messages using server code', async () => {
+  const home = makeHome({ orgToken: 'org_statetoken12345678901234567', orgName: 'Acme Corp', threshold: 3 });
+
+  handler = async () => ({ ok: false, code: 'org_suspended', error: 'Your organization is suspended.' });
+  const rSusp = await runCli(['org', 'status'], { home });
+  assert.notEqual(rSusp.code, 0);
+  assert.match(rSusp.stderr, /Organization suspended:/);
+  assert.doesNotMatch(rSusp.stderr, /Not enrolled/);
+
+  handler = async () => ({ ok: false, code: 'org_not_enrolled', error: 'Not enrolled in an organization.' });
+  const rRev = await runCli(['org', 'status'], { home });
+  assert.notEqual(rRev.code, 0);
+  assert.match(rRev.stderr, /Device enrollment revoked/);
+  assert.doesNotMatch(rRev.stderr, /Not enrolled/);
+});
