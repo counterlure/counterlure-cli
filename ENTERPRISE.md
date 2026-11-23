@@ -8,13 +8,15 @@
 
 ## 1. Threat Model: Off-Platform Human Targeting
 
+Strategic competition has shifted. Proprietary research, foundation models, chip designs, source code, and corporate data are now primary targets for state-sponsored intelligence services alongside traditional military assets. When perimeter defenses and endpoint controls hold, collection shifts to the people who have access.
+
 EDR, DLP, SIEM, and email gateways monitor corporate devices and corporate networks. They do not see who is approaching your engineers, researchers, and executives off-platform:
 
 - A researcher meets a plausible "investor" or "academic" at an AI, defense, or semiconductor conference.
 - A cleared engineer receives a message from a "specialist recruiter" on LinkedIn who moves the conversation to WhatsApp or Telegram.
 - An executive matches with a well-researched persona on a dating app who slowly probes roadmaps, travel, or colleagues.
 
-Organized recruitment and industrial espionage operations rarely target one person in isolation. The same operative works multiple staff inside the same organization in parallel using the same face under different cover names.
+State-sponsored intelligence services and organized espionage groups rarely target one person in isolation. The same operative works multiple staff inside the same organization in parallel using the same face under different cover names.
 
 Traditional security hotlines miss these campaigns because employees rarely report personal approaches to HR or Security. They worry about embarrassment, internal scrutiny, or clearance review if the contact turns out to be harmless. Counterlure Enterprise closes that gap by making employer visibility into individual employee activity technically impossible.
 
