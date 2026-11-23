@@ -742,8 +742,12 @@ async function orgCmd(rest, o, server, net, route) {
   const [sub, ...args] = rest;
   if (!sub || sub === 'help') return process.stdout.write(HELP);
   if (sub === 'enroll') {
+    const existing = loadOrg();
+    if (existing && !o.replace) {
+      throw new Error(`Already enrolled in ${existing.orgName}. Run "counterlure org leave" first, or pass --replace to replace this device's enrollment.`);
+    }
     const code = args[0] || await ask('Organization enrollment code: ');
-    if (!code) throw new Error('Usage: counterlure org enroll CODE');
+    if (!code) throw new Error('Usage: counterlure org enroll CODE [--replace]');
     const r = await call(server, 'org_enroll', { code }, net);
     saveOrg({ server, orgToken: r.deviceToken, orgName: r.orgName, threshold: r.threshold });
     if (o.json) return out(JSON.stringify({ enrolled: true, orgName: r.orgName, threshold: r.threshold }));
@@ -783,6 +787,7 @@ async function main() {
       name: { type: 'string' }, context: { type: 'string' }, handle: { type: 'string' }, face: { type: 'string' },
       anon: { type: 'boolean' }, yes: { type: 'boolean' }, 'dry-run': { type: 'boolean' }, 'save-crop': { type: 'string' },
       subject: { type: 'string', short: 's' }, chain: { type: 'string' }, resume: { type: 'boolean' }, all: { type: 'boolean' },
+      replace: { type: 'boolean' }, withdraw: { type: 'boolean' },
     },
   });
   const [cmd, ...rest] = positionals;

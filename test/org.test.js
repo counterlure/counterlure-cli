@@ -95,3 +95,25 @@ test('C1: org report refuses --anon and --save-crop instead of silently ignoring
   assert.match(rCrop.stderr, /--save-crop/);
   assert.equal(calls.length, 0, 'nothing sent when --save-crop refused');
 });
+
+test('C2: org enroll stops when already enrolled unless --replace is given', async () => {
+  calls = [];
+  handler = async (op) => {
+    if (op === 'org_enroll') return { ok: true, deviceToken: 'org_newtoken12345678901234567890', orgName: 'Beta Corp', threshold: 3 };
+    return { ok: true };
+  };
+  const home = makeHome({ orgToken: 'org_oldtoken12345678901234567890', orgName: 'Acme Corp', threshold: 3 });
+  const r1 = await runCli(['org', 'enroll', 'CLORG-AAAA-BBBB-CCCC-DDDD'], { home });
+  assert.notEqual(r1.code, 0);
+  assert.match(r1.stderr, /Already enrolled in Acme Corp/);
+  assert.match(r1.stderr, /--replace/);
+  assert.equal(calls.length, 0, 'no server call without --replace');
+
+  const r2 = await runCli(['org', 'enroll', 'CLORG-AAAA-BBBB-CCCC-DDDD', '--replace'], { home });
+  assert.equal(r2.code, 0, r2.stderr);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].op, 'org_enroll');
+  const saved = JSON.parse(fs.readFileSync(path.join(home, 'org.json'), 'utf8'));
+  assert.equal(saved.orgName, 'Beta Corp');
+  assert.equal(saved.orgToken, 'org_newtoken12345678901234567890');
+});
