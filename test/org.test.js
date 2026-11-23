@@ -173,3 +173,24 @@ test('C5: pre-send text lists every field sent by org_report instead of claiming
   assert.doesNotMatch(src, /128-value mathematical face template ONLY/);
   assert.match(src, /128-value face fingerprint, model version.*context.*attestation.*device token/);
 });
+
+test('C6: org inbox --json and org status --json omit protocol padding and envelope fields', async () => {
+  const home = makeHome({ orgToken: 'org_jsontoken123456789012345678', orgName: 'Acme Corp', threshold: 3 });
+  handler = async (op) => {
+    if (op === 'org_inbox') return { ok: true, messages: [{ id: '1', subject: 'Alert', body: 'Hello', createdAt: '2026-11-23T00:00:00Z' }], unread: 1 };
+    if (op === 'org_status') return { ok: true, orgName: 'Acme Corp', underAttack: false, severity: 'none', activeCampaigns: 0, unread: 0, countsFrom: '2026-11-25' };
+    return { ok: true };
+  };
+
+  const rIn = await runCli(['org', 'inbox', '--json'], { home });
+  assert.equal(rIn.code, 0, rIn.stderr);
+  const inJson = JSON.parse(rIn.stdout);
+  assert.deepEqual(Object.keys(inJson).sort(), ['messages', 'unread']);
+  assert.equal(inJson.pad, undefined);
+
+  const rSt = await runCli(['org', 'status', '--json'], { home });
+  assert.equal(rSt.code, 0, rSt.stderr);
+  const stJson = JSON.parse(rSt.stdout);
+  assert.deepEqual(Object.keys(stJson).sort(), ['activeCampaigns', 'countsFrom', 'orgName', 'severity', 'underAttack', 'unread']);
+  assert.equal(stJson.pad, undefined);
+});

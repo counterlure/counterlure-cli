@@ -711,14 +711,14 @@ async function orgReportCmd(org, file, o, net, route) {
   if (!o.yes && (await ask('Type "yes" to make this statement and file the report: ')).toLowerCase() !== 'yes') throw new Error('Not filed.');
 
   const r = await call(route.server, 'org_report', { orgToken: org.orgToken, model: MODEL_VERSION, face: face.embedding, context, attest: true }, net);
-  if (o.json) return out(JSON.stringify(r));
+  if (o.json) return out(JSON.stringify({ receipt: r.receipt, orgName: r.orgName }));
   out(`\nFiled anonymously inside ${r.orgName}. Receipt: ${r.receipt}`);
   out('No photo, name, or employee identity was sent. Check for private alerts anytime with: counterlure org inbox');
 }
 
 async function orgInboxCmd(org, o, net, server) {
   const r = await call(server, 'org_inbox', { orgToken: org.orgToken, markRead: true }, net);
-  if (o.json) return out(JSON.stringify(r, null, 2));
+  if (o.json) return out(JSON.stringify({ messages: r.messages || [], unread: r.unread ?? 0 }, null, 2));
   if (!r.messages.length) return out(`No private alerts for your anonymous ${org.orgName} device.`);
   const msgs = [...r.messages].reverse();
   const shown = o.all ? msgs : msgs.slice(-10);
@@ -732,7 +732,17 @@ async function orgInboxCmd(org, o, net, server) {
 
 async function orgStatusCmd(org, o, net, server) {
   const r = await call(server, 'org_status', { orgToken: org.orgToken }, net);
-  if (o.json) return out(JSON.stringify(r, null, 2));
+  if (o.json) {
+    const payload = {
+      orgName: r.orgName,
+      underAttack: Boolean(r.underAttack),
+      severity: r.severity,
+      activeCampaigns: r.activeCampaigns ?? 0,
+      unread: r.unread ?? 0,
+    };
+    if (r.countsFrom) payload.countsFrom = r.countsFrom;
+    return out(JSON.stringify(payload, null, 2));
+  }
   out(`Organization: ${r.orgName} (anonymous device enrolled)`);
   out(`Threat status: ${r.underAttack ? `UNDER COORDINATED TARGETING (${String(r.severity).toUpperCase()}, ${r.activeCampaigns} active campaign${r.activeCampaigns === 1 ? '' : 's'})` : 'All clear (no active coordinated campaigns)'}`);
   if (r.unread) out(`${r.unread} unread private alert${r.unread === 1 ? '' : 's'}. Run: counterlure org inbox`);
