@@ -18,7 +18,7 @@ EDR, DLP, SIEM, and email gateways monitor corporate devices and corporate netwo
 
 State-sponsored intelligence services and organized espionage groups rarely target one person in isolation. The same operative works multiple staff inside the same organization in parallel using the same face under different cover names.
 
-Traditional security hotlines miss these campaigns because employees rarely report personal approaches to HR or Security. They worry about embarrassment, internal scrutiny, or clearance review if the contact turns out to be harmless. Counterlure Enterprise closes that gap by making employer visibility into individual employee activity technically impossible.
+Traditional security hotlines miss these campaigns because employees rarely report personal approaches to HR or Security. They worry about embarrassment, internal scrutiny, or clearance review if the contact turns out to be harmless. Counterlure Enterprise closes that gap by keeping individual employee reports unattributed and invisible to the employer.
 
 ---
 
@@ -35,7 +35,7 @@ Counterlure Enterprise uses a **Dual-Tier Clustering** model:
 │    employee's machine]                        │                         │
 │                                               ▼                         │
 │                       OpenPGP Encrypted to Pinned Server Key            │
-│                       + Fixed-Size Padding (4 KB blocks)                │
+│                       + Fixed-Size Padding (16 KB request envelopes)    │
 │                       + Routed over Tor v3 Onion Service (no client IP) │
 └───────────────────────────────────────────────┬─────────────────────────┘
                                                 │
@@ -44,7 +44,7 @@ Counterlure Enterprise uses a **Dual-Tier Clustering** model:
 │                   ORGANIZATION PRIVATE NAMESPACE (Tier 1)               │
 │                                                                         │
 │   • Isolated strictly to your org_id (invisible to public & other orgs) │
-│   • Stores ONLY the 128-d face vector + anonymous random device_id      │
+│   • Stores the 128-d face vector, model, context, day & random device   │
 │   • NO employee name, NO corporate email, NO photo, NO IP address       │
 │   • Single reports (1 or 2 staff) remain private & invisible            │
 └──────────────────────────┬──────────────────────────────────────────────┘
@@ -54,14 +54,14 @@ Counterlure Enterprise uses a **Dual-Tier Clustering** model:
           ┌────────────────┴────────────────┬─────────────────────────────┐
           ▼                                 ▼                             ▼
 ┌───────────────────┐          ┌─────────────────────────┐     ┌────────────────────┐
-│  GLOBAL POOL      │          │  ORG SECURITY TEAM      │     │  REPORTING STAFF   │
+│  REVIEWER GATE    │          │  ORG SECURITY TEAM      │     │  REPORTING STAFF   │
 │  (Tier 2)         │          │  (Email + /org Portal)  │     │  (CLI org inbox)   │
 │                   │          │                         │     │                    │
-│ 128-d vector      │          │ Alert: ORG-XXXX         │     │ Private message:   │
-│ promoted to       │          │ Distinct reports: 3+    │     │ "Your org appears  │
-│ global watchlist  │          │ Severity: ELEVATED/HIGH │     │  to be under       │
-│ for cross-case    │          │                         │     │  attack — please   │
-│ matching          │          │ ZERO photos, ZERO names │     │  contact your      │
+│ Counterlure human │          │ Alert: ORG-XXXX         │     │ Private message:   │
+│ reviewer decides  │          │ Distinct reports: 3+    │     │ "Your org appears  │
+│ whether the case  │          │ Severity: ELEVATED/HIGH │     │  to be under       │
+│ joins the wider   │          │                         │     │  attack — please   │
+│ global pool       │          │ ZERO photos, ZERO names │     │  contact your      │
 │                   │          │ ZERO employee IDs       │     │  security team."   │
 └───────────────────┘          └─────────────────────────┘     └────────────────────┘
 ```
@@ -73,10 +73,10 @@ Counterlure Enterprise uses a **Dual-Tier Clustering** model:
 | Employee name / corporate email | **Never** | **Never** | **Never** |
 | Employee IP address | **Never** (Tor onion default) | **Never** | **Never** |
 | Face photo / image bytes | **Never** (in `org check` & `org report`) | **Never** | **Never** |
-| 128-d mathematical face vector | Yes (OpenPGP encrypted) | Yes (isolated to org until threshold) | **Never** |
-| Anonymous random device token | Yes (OpenPGP encrypted) | SHA-256 hash only | **Never** (aggregate count only) |
-| Single / uncorroborated report (1–2 staff) | Vector only | Private org namespace | **Never** |
-| Corroborated campaign (3+ distinct staff) | — | Promoted to global pool | **Case ref (`ORG-XXXX`), count, severity, dates only** |
+| 128-d face vector, model version, approach context & attestation | Yes (OpenPGP encrypted, 16 KB padded) | Yes (isolated to org until threshold) | **Never** |
+| Anonymous random device token | Yes (OpenPGP encrypted) | SHA-256 hash + enrollment/last-seen day | **Never** (aggregate count only) |
+| Single / uncorroborated report (1–2 staff) | Vector + context + token | Private org namespace | **Never** |
+| Corroborated campaign (3+ distinct staff) | — | Counterlure reviewer decides on wider pool | **Case ref (`ORG-XXXX`), count, severity, dates only** |
 
 ---
 
@@ -94,18 +94,18 @@ Counterlure Enterprise uses a **Dual-Tier Clustering** model:
 2. **First Login (Email OTP):** Enter the one-time **6-digit code** delivered to your corporate inbox (expires in 15 minutes).
 3. **Mandatory Authenticator Provisioning (TOTP):** Immediately after email verification, scan the locally generated QR code (or copy the manual Base32 setup key) into your authenticator app (1Password, Microsoft Authenticator, Google Authenticator, or Authy) and confirm with a 6-digit code.
 4. **All Subsequent Sign-Ins:** Entering your corporate email prompts directly for your **6-digit authenticator code** (no email OTP is sent again). Sessions use `HttpOnly`, `SameSite=Strict`, `Secure` cookies; 5 consecutive failed TOTP attempts trigger a 15-minute lockout and time-steps cannot be replayed.
-5. **License Activation:** On first activation, complete the on-screen settlement step inside `/org` to unlock your Command Center and employee CLI enrollment code.
+5. **License Activation:** On first activation, complete the on-screen settlement step inside `/org` to unlock your Command Center and single-use employee CLI enrollment codes.
 
 > **Lost Authenticator Access?** Email `overwatch@counterlure.com` from your verified corporate address to request an authenticator reset. Counterlure Support will clear the TOTP secret, revoke active sessions, and re-enable one-time email verification so you can provision a new authenticator app.
 
-### Step 3 — Distributing the Employee CLI Enrollment Code
-Inside `/org`, the **CLI Enrollment Code** panel provides:
-- **Active enrollment code** (e.g. `CLORG-XXXX-XXXX`)
+### Step 3 — Creating and Handing Out Single-Use Enrollment Codes
+Inside `/org`, the **Staff Enrollment Codes** panel provides:
+- **One-time enrollment codes** (e.g. `CLORG-XXXX-XXXX-XXXX-XXXX`): create one code per employee. Codes are shown once when created; Counterlure stores only a hash and deletes each code the moment it is redeemed, so nothing links a code to the device it enrolled.
 - **Aggregate enrolled device count** (total only, never tied to individuals)
-- **Rotate code** button (invalidates the old code for *new* enrollments without disconnecting already-enrolled staff devices)
+- **Cancel unused codes** and **Revoke all devices** controls (in case an unused batch leaks)
 - **Pre-filled Staff Memo** under the **Guides & Staff Rollout** tab
 
-Distribute the enrollment code through your internal wiki, Slack/Teams security channel, or MDM software catalog.
+> **Operational Security — Use a Personal Device:** Advise staff to install and run `counterlure-cli` on a **personal device on a personal network**, not on a company-managed laptop. Corporate-managed computers, endpoint agents (EDR/MDM), shell history, and corporate networks can observe the installation, command-line history, and Tor traffic even though Counterlure itself collects no employee identity. Give each employee one single-use code directly rather than deploying the CLI through corporate MDM or posting shared codes in Slack/Teams.
 
 ### Step 4 — Threat Posture & Alert Triage
 The `/org` Command Center displays your live threat posture:
@@ -140,17 +140,18 @@ counterlure models
 
 ### Everyday Commands for Staff
 ```bash
-# 1. One-time anonymous device enrollment (run once with your company's code)
-counterlure org enroll CLORG-XXXX-XXXX
+# 1. One-time anonymous device enrollment (each code works once; add --replace to overwrite an existing enrollment)
+counterlure org enroll CLORG-XXXX-XXXX-XXXX-XXXX
 
 # 2. Screen a suspicious contact's photo against BOTH your org's alerts and the global pool
-#    (Photo stays on your machine; only the 128-d face vector is sent)
+#    (Photo stays on your machine; only the 128-d face vector and device token are sent)
 counterlure org check contact.jpg
 
-# 3. File a zero-knowledge anonymous report inside your org's private namespace
-#    (No photo, no name, no employee identity leaves your machine)
+# 3. File an anonymous report inside your org's private namespace
+#    (Sends the 128-d face vector, model version, context, attestation, and device token; no photo or identity)
 counterlure org report contact.jpg --context work-or-business
 # Contexts: dating-app, social-media, event-or-conference, work-or-business, introduced, other
+# Add --dry-run to inspect what would be sent without sending anything.
 
 # 4. Check your private CLI inbox for coordinated-attack alerts
 counterlure org inbox
@@ -161,7 +162,7 @@ counterlure org status
 # 6. Withdraw a report at any time using the receipt you were given
 counterlure org withdraw CLO-XXXX-XXXX-XXXX-XXXX
 
-# 7. Remove the local anonymous device token from your machine
+# 7. Deactivate this device on the server and remove the local credential (add --withdraw to also remove reports)
 counterlure org leave
 ```
 

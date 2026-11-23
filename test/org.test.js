@@ -248,3 +248,14 @@ test('C10: enrolled employee running public counterlure report gets a public-int
   assert.match(r.stderr, /--yes/);
   assert.equal(calls.length, 0, 'nothing sent without confirmation');
 });
+
+test('C11: ENTERPRISE.md documents single-use codes, 16 KB padding, personal-device advice, and no MDM/Slack rollout', () => {
+  const md = fs.readFileSync(new URL('../ENTERPRISE.md', import.meta.url), 'utf8');
+  assert.match(md, /single-use/i);
+  assert.match(md, /16 KB/);
+  assert.match(md, /personal device/i);
+  assert.match(md, /shell history/i);
+  assert.match(md, /Tor traffic/i);
+  assert.doesNotMatch(md, /MDM software catalog/i);
+  assert.doesNotMatch(md, /technically impossible/i);
+});
