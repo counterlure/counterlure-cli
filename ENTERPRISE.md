@@ -87,6 +87,7 @@ Counterlure Enterprise uses a **Dual-Tier Clustering** model:
 | Employee name / corporate email | **Never** | **Never** | **Never** |
 | Employee IP address | **Never** (Tor onion default) | **Never** | **Never** |
 | Face photo / image bytes | **Never** (in `org check` & `org report`) | **Never** | **Never** |
+| Photo metadata (EXIF, GPS position, device model and serial, capture time, file name) | **Never**: no image or file is sent, only numbers computed from the pixels | **Never** | **Never** |
 | 128-d face vector, model version, approach context & attestation | Yes (OpenPGP encrypted, 16 KB padded) | Yes (isolated to org until threshold) | **Never** |
 | Anonymous random device token | Yes (OpenPGP encrypted) | SHA-256 hash + enrollment/last-seen day | **Never** (aggregate count only) |
 | Single / uncorroborated report (1–2 staff) | Vector + context + token | Private org namespace | **Never** |
@@ -169,10 +170,111 @@ cd counterlure-cli
 npm ci
 npm link
 ```
-Ensure Tor is running locally (Tor Browser open, or the `tor` service on port 9050/9150). To pre-download and SHA-256 verify the local face models:
+Ensure Tor is running locally (Tor Browser open, or the `tor` service on port 9050/9150). Then get the two face models, ideally yourself, before first use (next section).
+
+### Getting the face models
+
+The CLI runs two open models from [OpenCV's model zoo](https://github.com/opencv/opencv_zoo) on your own computer: YuNet finds faces, SFace turns a face into the 128 numbers that are compared. They are not bundled here, and **the tool never downloads them without asking you first.**
+
+| Model | File name | Size | SHA-256 |
+|---|---|---|---|
+| YuNet face detector (MIT) | `face_detection_yunet_2023mar.onnx` | 232,589 bytes | `8f2383e4dd3cfbb4553ea8718107fc0423210dc964f9f4280604804ed2552fa4` |
+| SFace face recognizer (Apache 2.0) | `face_recognition_sface_2021dec.onnx` | 38,696,353 bytes | `0ba9fbfa01b5270c96627c4ef784da859931e02f04419c829e83484087c34e79` |
+
+The hashes are pinned in [lib/faceprint.js](lib/faceprint.js). A file is accepted only if its hash matches, so it makes no difference where you got it.
+
+When a command needs the models, the tool does this, in order:
+
+1. **It looks for copies already on your computer**: in its models folder, then under the exact file names above in the current folder and in your `Downloads` folder. A copy whose hash matches is used with no network request.
+2. **If any are still missing, it stops and shows you** the table above, the official links, and how to get the files yourself.
+3. **It downloads only if you type `yes`.** The download goes over the same route as everything else (Tor by default), only from GitHub, and any file that fails the hash is deleted before it is ever loaded. In scripts, where there is nobody to ask, nothing is downloaded unless you pass `--fetch-models`.
+
+Run `counterlure models` at any time to see which models are installed and verified. It makes no network request.
+
+#### Downloading the models yourself (recommended)
+
+Fetching the files yourself means the Counterlure tool never makes the request. You choose when, from where and over which connection, and the download looks like anyone else getting OpenCV's models.
+
+**Step 1. Download both files.** Use one of these methods.
+
+*In a browser (Tor Browser works):* open each model's page and use GitHub's **Download raw file** button (the arrow icon above the file view).
+
+- https://github.com/opencv/opencv_zoo/blob/main/models/face_detection_yunet/face_detection_yunet_2023mar.onnx
+- https://github.com/opencv/opencv_zoo/blob/main/models/face_recognition_sface/face_recognition_sface_2021dec.onnx
+
+*With curl over Tor* (macOS, Linux, or Windows 10 and later; use port 9150 if Tor Browser is what is running):
+
+```bash
+curl -L --socks5-hostname 127.0.0.1:9050 -o face_detection_yunet_2023mar.onnx \
+  https://github.com/opencv/opencv_zoo/raw/main/models/face_detection_yunet/face_detection_yunet_2023mar.onnx
+curl -L --socks5-hostname 127.0.0.1:9050 -o face_recognition_sface_2021dec.onnx \
+  https://github.com/opencv/opencv_zoo/raw/main/models/face_recognition_sface/face_recognition_sface_2021dec.onnx
+```
+
+Drop `--socks5-hostname 127.0.0.1:9050` to download over your normal connection.
+
+*In Windows PowerShell* (normal connection):
+
+```powershell
+Invoke-WebRequest -OutFile face_detection_yunet_2023mar.onnx https://github.com/opencv/opencv_zoo/raw/main/models/face_detection_yunet/face_detection_yunet_2023mar.onnx
+Invoke-WebRequest -OutFile face_recognition_sface_2021dec.onnx https://github.com/opencv/opencv_zoo/raw/main/models/face_recognition_sface/face_recognition_sface_2021dec.onnx
+```
+
+*With git:* the model zoo stores its `.onnx` files with Git LFS. Install [git-lfs](https://git-lfs.com) first. Without it, a clone gives you small pointer files of about 130 bytes, and they will not match the hash. A sparse checkout avoids pulling the whole zoo:
+
+```bash
+git lfs install
+GIT_LFS_SKIP_SMUDGE=1 git clone --depth 1 --filter=blob:none --sparse https://github.com/opencv/opencv_zoo.git
+cd opencv_zoo
+git sparse-checkout set models/face_detection_yunet models/face_recognition_sface
+git lfs pull --include="models/face_detection_yunet/face_detection_yunet_2023mar.onnx,models/face_recognition_sface/face_recognition_sface_2021dec.onnx"
+```
+
+Any mirror you trust works too, such as an internal artifact store. Only the hash counts.
+
+**Step 2. Check the hashes yourself (optional; the tool checks again).** Compare the output with the table above.
+
+```bash
+sha256sum face_*.onnx                  # Linux
+shasum -a 256 face_*.onnx              # macOS
+```
+```powershell
+Get-FileHash -Algorithm SHA256 face_*.onnx   # Windows PowerShell
+certutil -hashfile face_recognition_sface_2021dec.onnx SHA256   # Windows cmd, one file at a time
+```
+
+**Step 3. Hand them to the tool.** Use any one of these:
+
+```bash
+counterlure models import ~/Downloads/face_detection_yunet_2023mar.onnx ~/Downloads/face_recognition_sface_2021dec.onnx
+counterlure models import ./opencv_zoo/models      # a folder: every .onnx file in it is checked
+```
+
+`import` identifies each file by its hash, so renamed files (`yunet.onnx`, `sface (1).onnx`) are fine. It copies the matches into the models folder and leaves everything else alone, reporting why each one was skipped. You can also skip `import` and leave the files under their original names in your `Downloads` folder, or in the folder you run the tool from; it will find them there. Or copy them into the models folder yourself:
+
+- Windows: `%APPDATA%\counterlure\models`
+- macOS and Linux: `~/.config/counterlure/models` (or `$XDG_CONFIG_HOME/counterlure/models`)
+- Anywhere else, by setting `COUNTERLURE_MODELS=/path/to/folder`
+
+**Step 4. Confirm.**
+
 ```bash
 counterlure models
+#   verified  face_detection_yunet_2023mar.onnx
+#   verified  face_recognition_sface_2021dec.onnx
+# Both models verified in ...
 ```
+
+#### Letting the tool download them
+
+```bash
+counterlure models --download     # shows the sources and hashes, then asks: type yes
+counterlure check photo.jpg --fetch-models   # consent in advance, e.g. in a script
+```
+
+If you answer anything other than `yes`, nothing is fetched and the command stops with the instructions above.
+
+**For security teams:** you can place verified copies on an internal mirror or artifact store and tell staff to fetch from there; `counterlure models import` accepts them on the hash alone. Do not push them to staff devices through MDM (see the personal-device note in section 3); a shared download link they fetch themselves is enough.
 
 ### Everyday Commands for Staff
 ```bash

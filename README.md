@@ -50,9 +50,111 @@ npm ci
 npm link
 ```
 
-The first `check` or `report` pulls the two models (39 MB) from OpenCV's repository and verifies each against a SHA-256 hash pinned in [lib/faceprint.js](lib/faceprint.js). A file that fails verification is deleted before it is ever loaded. Run `counterlure models` to fetch them in advance. The download takes the same route as everything else (see below).
+You also need the two open face models (39 MB) from OpenCV. The tool never downloads them without asking: you can fetch them yourself first, from OpenCV's own repository, and hand them over with `counterlure models import`. See [Getting the face models](#getting-the-face-models) below.
 
 You also need Tor running on the same computer: either [Tor Browser](https://www.torproject.org/download/) left open, or the tor service (`apt install tor`, `brew install tor && brew services start tor`). The tool finds it on 127.0.0.1:9050 or 9150 by itself. Without Tor it stops and says so; it never quietly falls back to the website.
+
+## Getting the face models
+
+The tool runs two open models from [OpenCV's model zoo](https://github.com/opencv/opencv_zoo) on your own computer: YuNet finds faces, SFace turns a face into the 128 numbers that are compared. They are not bundled here, and **the tool never downloads them without asking you first.**
+
+| Model | File name | Size | SHA-256 |
+|---|---|---|---|
+| YuNet face detector (MIT) | `face_detection_yunet_2023mar.onnx` | 232,589 bytes | `8f2383e4dd3cfbb4553ea8718107fc0423210dc964f9f4280604804ed2552fa4` |
+| SFace face recognizer (Apache 2.0) | `face_recognition_sface_2021dec.onnx` | 38,696,353 bytes | `0ba9fbfa01b5270c96627c4ef784da859931e02f04419c829e83484087c34e79` |
+
+The hashes are pinned in [lib/faceprint.js](lib/faceprint.js). A file is accepted only if its hash matches, so it makes no difference where you got it.
+
+When a command needs the models, the tool does this, in order:
+
+1. **It looks for copies already on your computer**: in its models folder, then under the exact file names above in the current folder and in your `Downloads` folder. A copy whose hash matches is used with no network request.
+2. **If any are still missing, it stops and shows you** the table above, the official links, and how to get the files yourself.
+3. **It downloads only if you type `yes`.** The download goes over the same route as everything else (Tor by default), only from GitHub, and any file that fails the hash is deleted before it is ever loaded. In scripts, where there is nobody to ask, nothing is downloaded unless you pass `--fetch-models`.
+
+Run `counterlure models` at any time to see which models are installed and verified. It makes no network request.
+
+### Downloading the models yourself (recommended)
+
+Fetching the files yourself means the Counterlure tool never makes the request. You choose when, from where and over which connection, and the download looks like anyone else getting OpenCV's models.
+
+**Step 1. Download both files.** Use one of these methods.
+
+*In a browser (Tor Browser works):* open each model's page and use GitHub's **Download raw file** button (the arrow icon above the file view).
+
+- https://github.com/opencv/opencv_zoo/blob/main/models/face_detection_yunet/face_detection_yunet_2023mar.onnx
+- https://github.com/opencv/opencv_zoo/blob/main/models/face_recognition_sface/face_recognition_sface_2021dec.onnx
+
+*With curl over Tor* (macOS, Linux, or Windows 10 and later; use port 9150 if Tor Browser is what is running):
+
+```bash
+curl -L --socks5-hostname 127.0.0.1:9050 -o face_detection_yunet_2023mar.onnx \
+  https://github.com/opencv/opencv_zoo/raw/main/models/face_detection_yunet/face_detection_yunet_2023mar.onnx
+curl -L --socks5-hostname 127.0.0.1:9050 -o face_recognition_sface_2021dec.onnx \
+  https://github.com/opencv/opencv_zoo/raw/main/models/face_recognition_sface/face_recognition_sface_2021dec.onnx
+```
+
+Drop `--socks5-hostname 127.0.0.1:9050` to download over your normal connection.
+
+*In Windows PowerShell* (normal connection):
+
+```powershell
+Invoke-WebRequest -OutFile face_detection_yunet_2023mar.onnx https://github.com/opencv/opencv_zoo/raw/main/models/face_detection_yunet/face_detection_yunet_2023mar.onnx
+Invoke-WebRequest -OutFile face_recognition_sface_2021dec.onnx https://github.com/opencv/opencv_zoo/raw/main/models/face_recognition_sface/face_recognition_sface_2021dec.onnx
+```
+
+*With git:* the model zoo stores its `.onnx` files with Git LFS. Install [git-lfs](https://git-lfs.com) first. Without it, a clone gives you small pointer files of about 130 bytes, and they will not match the hash. A sparse checkout avoids pulling the whole zoo:
+
+```bash
+git lfs install
+GIT_LFS_SKIP_SMUDGE=1 git clone --depth 1 --filter=blob:none --sparse https://github.com/opencv/opencv_zoo.git
+cd opencv_zoo
+git sparse-checkout set models/face_detection_yunet models/face_recognition_sface
+git lfs pull --include="models/face_detection_yunet/face_detection_yunet_2023mar.onnx,models/face_recognition_sface/face_recognition_sface_2021dec.onnx"
+```
+
+Any mirror you trust works too, such as an internal artifact store. Only the hash counts.
+
+**Step 2. Check the hashes yourself (optional; the tool checks again).** Compare the output with the table above.
+
+```bash
+sha256sum face_*.onnx                  # Linux
+shasum -a 256 face_*.onnx              # macOS
+```
+```powershell
+Get-FileHash -Algorithm SHA256 face_*.onnx   # Windows PowerShell
+certutil -hashfile face_recognition_sface_2021dec.onnx SHA256   # Windows cmd, one file at a time
+```
+
+**Step 3. Hand them to the tool.** Use any one of these:
+
+```bash
+counterlure models import ~/Downloads/face_detection_yunet_2023mar.onnx ~/Downloads/face_recognition_sface_2021dec.onnx
+counterlure models import ./opencv_zoo/models      # a folder: every .onnx file in it is checked
+```
+
+`import` identifies each file by its hash, so renamed files (`yunet.onnx`, `sface (1).onnx`) are fine. It copies the matches into the models folder and leaves everything else alone, reporting why each one was skipped. You can also skip `import` and leave the files under their original names in your `Downloads` folder, or in the folder you run the tool from; it will find them there. Or copy them into the models folder yourself:
+
+- Windows: `%APPDATA%\counterlure\models`
+- macOS and Linux: `~/.config/counterlure/models` (or `$XDG_CONFIG_HOME/counterlure/models`)
+- Anywhere else, by setting `COUNTERLURE_MODELS=/path/to/folder`
+
+**Step 4. Confirm.**
+
+```bash
+counterlure models
+#   verified  face_detection_yunet_2023mar.onnx
+#   verified  face_recognition_sface_2021dec.onnx
+# Both models verified in ...
+```
+
+### Letting the tool download them
+
+```bash
+counterlure models --download     # shows the sources and hashes, then asks: type yes
+counterlure check photo.jpg --fetch-models   # consent in advance, e.g. in a script
+```
+
+If you answer anything other than `yes`, nothing is fetched and the command stops with the instructions above.
 
 ## Opening an account
 
@@ -133,7 +235,9 @@ Before anything is sent you are shown a summary of exactly what will leave, and 
 
 > I am in contact with this person personally and I am unsure about their intentions. I am not using this to track an ex-partner or anyone else, and nothing about my report is based on their nationality or ethnicity.
 
-**The crop.** The photo is decoded to raw pixels, rotated upright, cut down to the chosen face plus a margin, and encoded as a new JPEG of at most 480 px. The margin shrinks if it would take in another detected face. Because the output is built from pixels and not copied from the source file, no EXIF, GPS position, device serial, colour profile or embedded thumbnail can survive into it. Check this yourself with `--dry-run --save-crop crop.jpg` and any metadata viewer.
+**The crop.** The photo is decoded to raw pixels, rotated upright, cut down to the chosen face plus a margin, and encoded as a new JPEG of at most 480 px. The margin shrinks if it would take in another detected face. Because the output is built from pixels and not copied from the source file, no EXIF, GPS position, device serial, colour profile or embedded thumbnail can survive into it. Check this yourself with `--dry-run --save-crop crop.jpg` and any metadata viewer. `check` and `org report` send no image at all, only the 128-number face template, so there is no photo metadata to leak.
+
+The website's report form does the same in the browser: the photo is decoded and redrawn on a canvas and re-encoded as a new JPEG before upload, so EXIF, GPS, device data, thumbnails and the original file name never leave the device. The server re-encodes every upload again on arrival.
 
 **The receipt.** A successful report returns a receipt such as `CL-7Q2M-XK4D-91TF-HC3P`. It is the only handle on the report: the tool does not store it, and the service holds only a keyed hash of it. Record it offline. To withdraw:
 
@@ -304,4 +408,4 @@ Apache License 2.0 (see [LICENSE](LICENSE) and [NOTICE](NOTICE)). Versions up to
 
 You may read, run, change and share the code. The licence gives no right to the Counterlure name: a changed copy must not call itself Counterlure or the official CLI. Only releases from this repository are official, and only they hold the pinned server key that checks every reply comes from Counterlure.
 
-The models are not distributed here. They are fetched from OpenCV's model zoo: YuNet under MIT, SFace under Apache 2.0.
+The models are not distributed here. You get them from OpenCV's model zoo yourself, or the tool fetches them from there once you agree: YuNet under MIT, SFace under Apache 2.0.

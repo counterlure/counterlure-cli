@@ -46,7 +46,7 @@ test('model downloads follow redirects to GitHub only', () => {
 test('a failed model download leaves nothing behind', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cl-models-'));
   const proxy = new URL('http://127.0.0.1:1'); // nothing listens there
-  await assert.rejects(ensureModels(dir, { proxy }), /ECONNREFUSED/);
+  await assert.rejects(ensureModels(dir, { proxy, searchDirs: [] }), /ECONNREFUSED/);
   assert.deepEqual(fs.readdirSync(dir), []);
   fs.rmSync(dir, { recursive: true, force: true });
 });

@@ -16,7 +16,7 @@ import path from 'node:path';
 import { parseArgs } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { MODEL_VERSION, faceprints } from '../lib/faceprint.js';
-import { ensureModels } from '../lib/models.js';
+import { ensureModels, importModels, modelStatus, missingModelsText, findLocalModels } from '../lib/models.js';
 import { REPORT_PAD, Refused, call, serverFingerprint } from '../lib/proto.js';
 import { DEFAULT_BITS, MAX_BITS } from '../lib/pow.js';
 import { faceCrop } from '../lib/crop.js';
@@ -67,7 +67,12 @@ Faces
       --save-crop FILE     write the exact crop that is (or would be) sent
       --yes                skip the confirmation prompt (you still make the statement)
   withdraw RECEIPT         Withdraw a report. The stored crop and face template are destroyed.
-  models                   Download and verify the face models (SHA-256 pinned).
+  models                   Show whether the two face models are installed and verified.
+  models import PATH...    Bring in model files you downloaded yourself (files or folders).
+                           Each is accepted only if it matches a pinned SHA-256.
+  models --download        Fetch the missing models from OpenCV's GitHub (asks first).
+      --fetch-models       (any command) consent in advance to fetching missing models;
+                           without it, nothing is downloaded unless you type yes.
   key                      Print the pinned server key fingerprint and onion address.
 
 Organization (Enterprise Cluster Defense — zero-knowledge employee anonymity)
@@ -217,7 +222,24 @@ function level(m) {
   return `${m.level === 'strong' ? 'STRONG POSSIBLE MATCH' : 'possible match'} with ${what}`;
 }
 
-const models = (net) => ensureModels(dirs.models, { ...net, log: say });
+// Model consent. Verified copies already on this computer are used first (see lib/models.js). If any
+// are still missing, nothing is fetched until the person says so: they are shown where to get the
+// files themselves, and asked. Without a terminal to ask on, only --fetch-models counts as yes.
+const modelPolicy = { fetch: false, route: '' };
+async function modelConsent(missing) {
+  say(missingModelsText(missing, dirs.models));
+  if (modelPolicy.fetch) { say('--fetch-models given: downloading.'); return true; }
+  if (!process.stdin.isTTY) {
+    say('No terminal to ask on, so nothing was downloaded. Import the files yourself, or rerun with --fetch-models.');
+    return false;
+  }
+  const a = (await ask(`Download them now from GitHub over ${modelPolicy.route || 'the configured route'}? Type yes to proceed: `)).toLowerCase();
+  if (a === 'yes' || a === 'y') return true;
+  say('Nothing was downloaded. When you have the files: counterlure models import FILE-OR-FOLDER ...');
+  return false;
+}
+const models = (net) => ensureModels(dirs.models, { ...net, log: say, consent: modelConsent });
+
 
 // Calls that need proof of work: begin at the default, and do the extra work once if the server
 // asks for more (it raises the bar when it is under load).
@@ -916,7 +938,7 @@ async function main() {
       name: { type: 'string' }, context: { type: 'string' }, handle: { type: 'string' }, face: { type: 'string' },
       anon: { type: 'boolean' }, yes: { type: 'boolean' }, 'dry-run': { type: 'boolean' }, 'save-crop': { type: 'string' },
       subject: { type: 'string', short: 's' }, chain: { type: 'string' }, resume: { type: 'boolean' }, all: { type: 'boolean' },
-      replace: { type: 'boolean' }, withdraw: { type: 'boolean' },
+      replace: { type: 'boolean' }, withdraw: { type: 'boolean' }, 'fetch-models': { type: 'boolean' }, download: { type: 'boolean' },
     },
   });
   const [cmd, ...rest] = positionals;
@@ -934,12 +956,39 @@ async function main() {
     return;
   }
 
+  modelPolicy.fetch = Boolean(o['fetch-models']);
+  if (cmd === 'models' && !o.download) {
+    const [sub, ...paths] = rest;
+    if (sub === 'import') {
+      if (!paths.length) throw new Error('Usage: counterlure models import FILE-OR-FOLDER ...');
+      const { imported, rejected } = await importModels(dirs.models, paths);
+      for (const i of imported) out(`Imported ${i.file}  (from ${i.from}, SHA-256 verified)`);
+      for (const r of rejected) say(`Skipped ${r.file}: ${r.why}`);
+    } else if (sub && sub !== 'status') {
+      throw new Error(`Unknown models command "${sub}". Run: counterlure --help`);
+    } else {
+      for (const x of await findLocalModels(dirs.models)) say(`Using the verified copy of ${x.file} found at ${x.from}`);
+    }
+    const st = await modelStatus(dirs.models);
+    if (o.json) return out(JSON.stringify({ dir: dirs.models, models: st.map((m) => ({ file: m.file, sha256: m.sha256, installed: m.installed })) }));
+    for (const m of st) out(`  ${m.installed ? 'verified' : 'missing '}  ${m.file}`);
+    const missing = st.filter((m) => !m.installed);
+    if (missing.length) {
+      say('');
+      say(missingModelsText(missing, dirs.models));
+      say('  To fetch them with this tool instead: counterlure models --download');
+      process.exitCode = 1;
+    } else out(`Both models verified in ${dirs.models}`);
+    return;
+  }
+
   // Everything below talks to the network. Nothing is sent until the route is settled.
   const route = await resolveRoute(o);
   const net = { proxy: route.proxy };
   const server = route.server;
   trustedKey = await serverFingerprint();
   if (route.custom || !route.onion) say(`note: ${route.label}`);
+  modelPolicy.route = route.label;
 
   if (cmd === 'models') {
     await models(net);
