@@ -44,7 +44,7 @@ Every request is OpenPGP-encrypted to a server key compiled into the tool and pa
 Node.js 22 or later.
 
 ```bash
-git clone --branch v0.4.4 --depth 1 https://github.com/counterlure/counterlure-cli.git
+git clone --branch v0.4.5 --depth 1 https://github.com/counterlure/counterlure-cli.git
 cd counterlure-cli
 npm ci
 npm link
