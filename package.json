@@ -10,7 +10,7 @@
   "scripts": { "test": "node --test" },
   "dependencies": {
     "onnxruntime-node": "1.31.1",
-    "openpgp": "6.3.2",
+    "openpgp": "6.3.3",
     "sharp": "0.35.5"
   }
 }
