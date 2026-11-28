@@ -42,7 +42,8 @@ OpenPGP-encrypted to a pinned key and padded to a fixed size.
 
 Account
   signup [--user NAME]     Open an account: pick a username, link an authenticator app, pay in
-         [--chain ID]      crypto. No email, phone or name is asked for. Resumes where it stopped.
+         [--plan P]        crypto. No email, phone or name is asked for. Resumes where it stopped.
+         [--chain ID]      --plan pass30 (30 days, renewed by hand) or --plan lifetime (paid once).
   login [--user NAME]      Sign in with username and authenticator code (24 h session).
   whoami | logout          Show or end the current session (logout also abandons a signup).
 
@@ -381,10 +382,12 @@ async function report(file, o, s, net, route) {
   let r;
   if (asMember) r = await call(route.server, 'report', { ...args, token: s.token }, { ...net, padTo: REPORT_PAD });
   else r = await callWithWork(route.server, 'report', args, net, { padTo: REPORT_PAD });
-  if (o.json) return out(JSON.stringify({ receipt: r.receipt, attributedTo: r.attributedTo }));
+  if (o.json) return out(JSON.stringify({ receipt: r.receipt, attributedTo: r.attributedTo, ...(r.notice ? { notice: r.notice } : {}) }));
   out(`\nFiled. Receipt: ${r.receipt}`);
   out('Keep the receipt offline. It is the only way to withdraw this report, and this tool does not store it.');
-  if (!r.attributedTo) out('Filed unattributed: nobody can contact you about it, and it adds weight only alongside other sources.');
+  // A lapsed 30-day pass: the server files the report but does not link it to the inbox, and says why.
+  if (r.notice) out(r.notice);
+  else if (!r.attributedTo) out('Filed unattributed: nobody can contact you about it, and it adds weight only alongside other sources.');
 }
 
 // ------------------------------------------------------------------ signup
@@ -406,32 +409,62 @@ function showAuthenticator(st) {
   ].join('\n'));
 }
 
-async function pickChain(o, server, net) {
-  const opts = await call(server, 'pay_options', {}, net);
-  const sale = opts.regularUsd && opts.regularUsd > opts.priceUsd
-    ? ` (regularly $${opts.regularUsd}${opts.offerEndsAt ? `, this price until ${new Date(opts.offerEndsAt).toLocaleDateString()}` : ''})` : '';
-  say([
-    '',
-    'Step 2 of 3: choose how to pay',
-    `  Membership: $${opts.priceUsd}${sale}, paid once in crypto. No card, no name, no address.`,
-    opts.autoDetect ? `  You get a payment address made for your account alone, valid for ${span(opts.addressMinutes * 60000)}.` : null,
-    '',
-    ...opts.chains.map((c, i) => `  ${i + 1}. ${c.label}  (--chain ${c.id})`),
-    '',
-  ].filter((l) => l !== null).join('\n'));
-  const byId = (a) => opts.chains.find((c) => c.id.toLowerCase() === String(a).trim().toLowerCase());
-  if (o.chain) {
-    const hit = byId(o.chain);
-    if (!hit) throw new Error(`--chain must be one of: ${opts.chains.map((c) => c.id).join(', ')}`);
+const usd = (n) => `$${Number(n).toLocaleString('en-US')}`;
+const planName = (id) => (id === 'pass30' ? '30-day pass' : id === 'lifetime' ? 'lifetime account' : id);
+const RENEW_URL = `${SITE}/join?renew`;
+
+// One choice from a short numbered list: the flag if given, otherwise a prompt that takes the number
+// or the id. Enter picks the first entry only when `enterPicksFirst` and a person is at the terminal.
+async function chooseFrom(list, { given, flag, question, enterPicksFirst = false }) {
+  const byId = (a) => list.find((x) => x.id.toLowerCase() === String(a).trim().toLowerCase());
+  if (given) {
+    const hit = byId(given);
+    if (!hit) throw new Error(`--${flag} must be one of: ${list.map((x) => x.id).join(', ')}`);
     return hit.id;
   }
   for (let tries = 0; tries < 3; tries++) {
-    const a = await ask(`Pay with (1-${opts.chains.length}): `);
-    const hit = opts.chains[Number(a) - 1] || byId(a);
+    const a = await ask(question);
+    if (!a && enterPicksFirst && process.stdin.isTTY) return list[0].id;
+    const hit = list[Number(a) - 1] || byId(a);
     if (hit) return hit.id;
     if (!process.stdin.isTTY) break;
   }
-  throw new Error(`Choose a payment method: counterlure signup --chain ${opts.chains[0]?.id || 'ID'}`);
+  throw new Error(`Choose with: counterlure signup --${flag} ${list[0]?.id || 'ID'}`);
+}
+
+// Step 2: which plan (a 30-day pass or lifetime), then which coin. A server that predates plans
+// sends none, and the order is placed without one, as before.
+async function pickPlanAndChain(o, sign, server, net) {
+  const opts = await call(server, 'pay_options', {}, net);
+  const plans = [...(opts.plans || [])].sort((a, b) => (a.days == null) - (b.days == null)); // the pass first, as on the website
+  say([
+    '',
+    'Step 2 of 3: choose a plan and how to pay',
+    '  Paid in crypto. No card, no name, no address. Nothing is ever charged automatically.',
+  ].join('\n'));
+  let plan;
+  if (plans.length) {
+    say([
+      '',
+      ...plans.map((p, i) => p.days
+        ? `  ${i + 1}. ${p.days}-day pass  ${usd(p.priceUsd)}. Renew it by hand when it ends.  (--plan ${p.id})`
+        : `  ${i + 1}. Lifetime     ${usd(p.priceUsd)}, paid once.  (--plan ${p.id})`),
+    ].join('\n'));
+    // A signup whose last address expired keeps the plan it chose, unless --plan says otherwise.
+    const remembered = !o.plan && plans.some((p) => p.id === sign.plan) ? sign.plan : undefined;
+    if (remembered) say(`\n  Plan: ${planName(remembered)} (chosen earlier; --plan changes it).`);
+    plan = await chooseFrom(plans, { given: o.plan || remembered, flag: 'plan', question: `Plan (1-${plans.length}, Enter for 1): `, enterPicksFirst: true });
+  } else {
+    say(`  Membership: ${usd(opts.priceUsd)}, paid once.`);
+  }
+  say([
+    '',
+    opts.autoDetect ? `  You get a payment address made for your account alone, valid for ${span(opts.addressMinutes * 60000)}.` : null,
+    ...opts.chains.map((c, i) => `  ${i + 1}. ${c.label}  (--chain ${c.id})`),
+    '',
+  ].filter((l) => l !== null).join('\n'));
+  const chain = await chooseFrom(opts.chains, { given: o.chain, flag: 'chain', question: `Pay with (1-${opts.chains.length}): ` });
+  return { plan, chain };
 }
 
 // "1 h 05 min", "12 min": what is left of an address's window.
@@ -449,6 +482,7 @@ function showOrder(st) {
     return say([
       '',
       'Step 3 of 3: pay',
+      st.plan ? `  For            ${planName(st.plan)}` : null,
       `  Send exactly   ${st.amount} ${st.symbol}`,
       `  on             ${st.chainLabel}`,
       `  to             ${st.address}`,
@@ -459,12 +493,13 @@ function showOrder(st) {
       '',
       indent(st.qrText),
       '',
-    ].join('\n'));
+    ].filter((l) => l !== null).join('\n'));
   }
   const end = deadline(st);
   say([
     '',
     'Step 3 of 3: pay',
+    st.plan ? `  For            ${planName(st.plan)}` : null,
     `  Send           ${st.amount} ${st.symbol}`,
     `  on             ${st.chainLabel}`,
     `  to             ${st.address}`,
@@ -477,7 +512,7 @@ function showOrder(st) {
     '',
     indent(st.qrText),
     '',
-  ].join('\n'));
+  ].filter((l) => l !== null).join('\n'));
 }
 
 // Waits for a payment to the member's own address to be found, asking the server every 30 s.
@@ -594,6 +629,7 @@ async function settle(st, sign, server, net) {
 async function finish(st, sign, server, net) {
   const sess = st.session;
   if (!sess) throw new Error('The account is open but no session came back. Run: counterlure login');
+  const plan = st.plan || sign?.plan;
   saveSession({ server, token: sess.token, username: sess.username, expiresAt: sess.expiresAt });
   forgetSignup();
   if (st.step === 'done' && st.recoveryCodes?.length) {
@@ -613,6 +649,10 @@ async function finish(st, sign, server, net) {
     await call(server, 'codes_saved', { token: sess.token }, net);
   }
   out(`\nSigned in as ${sess.username} until ${when(sess.expiresAt)}.`);
+  if (plan === 'pass30') {
+    out(`Your 30-day pass ${st.paidUntil ? `runs until ${when(st.paidUntil)}` : 'starts now'}. It is never renewed automatically:`);
+    out(`renew it before it ends at ${RENEW_URL} (sign in with this username and authenticator).`);
+  }
   out('Next: counterlure check PHOTO, counterlure inbox, or counterlure send "a message to the team".');
 }
 
@@ -659,9 +699,11 @@ async function signup(o, server, net) {
       st = await call(server, 'signup_state', { signupToken: sign.signupToken }, net);
     } else if (st.step === 'chain') {
       if (st.lastOrderExpired) say('\nYour last payment address expired before a payment reached it. Do NOT send to it any more.');
-      const chain = await pickChain(o, server, net);
-      st = await call(server, 'pay_order', { signupToken: sign.signupToken, chain }, net);
-      saveSignup({ ...sign, txHash: undefined });
+      const { plan, chain } = await pickPlanAndChain(o, sign, server, net);
+      st = await call(server, 'pay_order', { signupToken: sign.signupToken, chain, ...(plan ? { plan } : {}) }, net);
+      // The new order's reply does not repeat the plan (a resumed signup's state does): keep the one chosen.
+      if (plan && !st.plan) st = { ...st, plan };
+      saveSignup({ ...sign, txHash: undefined, plan: st.plan });
       sign = loadSignup();
     } else if (st.step === 'pay') {
       const r = await settle(st, sign, server, net);
@@ -937,7 +979,7 @@ async function main() {
       server: { type: 'string' }, user: { type: 'string' }, help: { type: 'boolean', short: 'h' }, version: { type: 'boolean' },
       name: { type: 'string' }, context: { type: 'string' }, handle: { type: 'string' }, face: { type: 'string' },
       anon: { type: 'boolean' }, yes: { type: 'boolean' }, 'dry-run': { type: 'boolean' }, 'save-crop': { type: 'string' },
-      subject: { type: 'string', short: 's' }, chain: { type: 'string' }, resume: { type: 'boolean' }, all: { type: 'boolean' },
+      subject: { type: 'string', short: 's' }, chain: { type: 'string' }, plan: { type: 'string' }, resume: { type: 'boolean' }, all: { type: 'boolean' },
       replace: { type: 'boolean' }, withdraw: { type: 'boolean' }, 'fetch-models': { type: 'boolean' }, download: { type: 'boolean' },
     },
   });

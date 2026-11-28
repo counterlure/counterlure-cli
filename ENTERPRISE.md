@@ -165,7 +165,7 @@ Each escalated alert displays its reference (`ORG-XXXX`), distinct report count,
 
 ### Installation (Node.js 22+ and Tor)
 ```bash
-git clone --branch v0.4.3 --depth 1 https://github.com/counterlure/counterlure-cli.git
+git clone --branch v0.4.4 --depth 1 https://github.com/counterlure/counterlure-cli.git
 cd counterlure-cli
 npm ci
 npm link

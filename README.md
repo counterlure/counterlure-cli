@@ -44,7 +44,7 @@ Every request is OpenPGP-encrypted to a server key compiled into the tool and pa
 Node.js 22 or later.
 
 ```bash
-git clone --branch v0.4.3 --depth 1 https://github.com/counterlure/counterlure-cli.git
+git clone --branch v0.4.4 --depth 1 https://github.com/counterlure/counterlure-cli.git
 cd counterlure-cli
 npm ci
 npm link
@@ -166,7 +166,7 @@ Three steps, all in the terminal:
 
 1. **Username.** Pick one (3 to 32 letters, numbers, `.`, `-`, `_`). This step carries a few seconds of proof of work.
 2. **Authenticator.** A QR code is drawn in the terminal. Scan it with Aegis, 2FAS, Raivo, Google Authenticator, 1Password or any TOTP app, or type the key shown under it, then enter the 6-digit code to confirm. The authenticator is the only way in: there is no email or password to reset.
-3. **Payment.** Choose a coin (for example `--chain USDC_BASE`, `ETH_BASE`, `USDC_ERC20`, `USDT_ERC20` or `ETH`, whichever the service currently accepts). You get a payment address made for your account alone, the amount, and the time until which the address may be used, as text and as a QR code. Send at least the amount before that time, then press Enter: the tool waits until the payment is found and confirmed. You can also paste the transaction ID instead.
+3. **Payment.** Choose a plan, then a coin. The plans are a **30-day pass ($100)** and a **lifetime account ($5,000, paid once)**; give `--plan pass30` or `--plan lifetime` to skip the question (at the prompt, Enter picks the pass). Nothing is ever charged automatically: a pass is renewed by hand, on the website at <https://www.counterlure.com/join?renew> (sign in with the same username and authenticator), and can be upgraded to lifetime there. When a pass ends, your inbox stays readable, but new reports are no longer linked to it until you renew; the tool tells you when that happens. For the coin, use for example `--chain USDC_BASE`, `ETH_BASE`, `USDC_ERC20`, `USDT_ERC20` or `ETH`, whichever the service currently accepts. You get a payment address made for your account alone, the amount, and the time until which the address may be used, as text and as a QR code. Send at least the amount before that time, then press Enter: the tool waits until the payment is found and confirmed. You can also paste the transaction ID instead.
 
    **Never send to an address after its time is up.** The tool says when it has expired and stops showing it; run `counterlure signup` again to get a new one.
 
@@ -176,14 +176,14 @@ You can stop at any step. `counterlure signup` picks up where you left off; the 
 
 Unpaid signups are deleted after 30 days, and signups whose authenticator was never confirmed after an hour.
 
-### Why a lifetime account costs $5,000
+### Why an account costs money at all
 
-The launch offer is lower, but $5,000 is the real price. The price is part of the defence.
+A $100 pass or $5,000 for life. The price is part of the defence, for two practical reasons.
 
 - **Sybil resistance.** Adversaries will try to flood the registry with noise, to poison the face fingerprints or to fish for false positives. Requiring payment creates economic friction against automated sockpuppet spam.
 - **Adversarial resilience, technical and legal.** Counterlure is designed to burn active operatives, so we fully expect sustained pushback from sophisticated malicious actors, including state-sponsored ones. Defending this infrastructure takes continuous hardening against DDoS, infiltration and targeted exploits, and a dedicated legal war chest to fight off SLAPP suits, abusive takedown demands and jurisdictional pressure.
 
-We don't run ads, sell data or take VC money that could be pressured into shutting the registry down. Member-funded lifetime accounts directly bankroll the code defence and legal armour that keep the service alive. The same explanation is on the website: <https://www.counterlure.com/#why-price>.
+We don't run ads, sell data or take VC money that could be pressured into shutting the registry down. Member fees directly bankroll the code defence and legal armour that keep the service alive. The same explanation is on the website: <https://www.counterlure.com/#why-price>.
 
 ## Screening a photo (members)
 
